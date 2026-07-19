@@ -171,18 +171,20 @@ body {
   justify-content: space-between;
   gap: 32px;
 }
-.logo {
+.logo-link {
   display: flex;
   align-items: center;
-  gap: 2px;
   text-decoration: none;
-  font-family: 'Impact', 'Arial Black', sans-serif;
-  font-size: 26px;
-  letter-spacing: -0.5px;
   flex-shrink: 0;
+  transition: opacity var(--transition);
 }
-.logo-net { color: var(--primary); }
-.logo-bee { color: var(--accent); }
+.logo-link:hover { opacity: 0.85; }
+.footer-logo-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  margin-bottom: 4px;
+}
 
 .nav {
   display: flex;
@@ -1002,13 +1004,6 @@ body {
   margin: 16px 0 24px;
   max-width: 300px;
 }
-.footer-logo {
-  font-family: 'Impact', 'Arial Black', sans-serif;
-  font-size: 28px;
-  text-decoration: none;
-}
-.footer-logo .logo-net { color: rgba(65, 165, 209, 0.9); }
-.footer-logo .logo-bee { color: var(--accent); }
 
 .footer-contact-items {
   display: flex;
@@ -1149,3 +1144,52 @@ body {
     flex-direction: column;
   }
 }
+
+/* ─── Scroll Reveal Animations ─── */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+
+/* ─── VoIP Addons ─── */
+.voip-addons {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.voip-addons-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 10px;
+}
+.voip-addon-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+.voip-addon-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.75);
+}
+.voip-addon-price {
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+

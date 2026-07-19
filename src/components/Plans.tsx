@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, ArrowRight } from 'lucide-react';
+import { useScrollReveal } from '../hooks/useScrollReveal';
 
 type BillingType = 'bimestrale' | 'annuale';
 type ClientType = 'privati' | 'business';
@@ -148,11 +149,12 @@ export default function Plans() {
   const [billing, setBilling] = useState<BillingType>('bimestrale');
   const [clientType, setClientType] = useState<ClientType>('privati');
   const plans = clientType === 'privati' ? privatiPlans : businessPlans;
+  const headerRef = useScrollReveal();
 
   return (
     <section id="internet" className="plans-section">
       <div className="container">
-        <div className="plans-header">
+        <div ref={headerRef} className="plans-header reveal">
           <span className="section-badge">Connettività Internet</span>
           <h2 className="section-title">Piani FWA Radio</h2>
           <p className="section-subtitle">

@@ -1,4 +1,12 @@
 import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home } from 'lucide-react';
+import { useScrollReveal } from '../hooks/useScrollReveal';
+
+const voipAddons = [
+  { label: 'Numero VoIP', price: '6€/mese' },
+  { label: 'Attivazione nuovo numero', price: '10€ una tantum' },
+  { label: 'Portabilità numero', price: '25€ una tantum' },
+  { label: 'IP Pubblico Statico', price: '5€/mese' },
+];
 
 const services = [
   {
@@ -14,7 +22,6 @@ const services = [
       'Dal piccolo appartamento al grande magazzino',
       'Scalabilità e sicurezza garantite',
     ],
-    featured: false,
   },
   {
     id: 'cablaggio',
@@ -28,7 +35,6 @@ const services = [
       'Etichettatura e test di funzionamento',
       'Certificazione impianto disponibile su richiesta',
     ],
-    featured: false,
   },
   {
     id: 'fibra',
@@ -43,7 +49,6 @@ const services = [
       'Misurazioni, test di continuità e attenuazione',
       'Certificazione impianto su richiesta',
     ],
-    featured: false,
   },
   {
     id: 'voip',
@@ -57,26 +62,61 @@ const services = [
       'Integrazione con qualunque operatore SIP trunk',
       'Telefoni cordless DECT con roaming automatico',
       'Telefoni IP da scrivania con audio HD e PoE',
-      'IP Pubblico Statico disponibile (+5€/mese)',
     ],
-    featured: false,
-  },
-  {
-    id: 'cctv',
-    icon: <Camera size={26} />,
-    iconClass: 'white',
-    title: 'Videosorveglianza',
-    desc: 'Dalla casa privata al centro urbano, soluzioni di videosorveglianza affidabili con IA integrata. Impianti scalabili e conformi GDPR.',
-    features: [],
-    featured: true,
+    addons: true,
   },
 ];
 
+function ServiceCard({ service, delay }: { service: (typeof services)[0]; delay: number }) {
+  const ref = useScrollReveal();
+  return (
+    <div
+      ref={ref}
+      className="service-card reveal"
+      style={{ transitionDelay: `${delay * 0.1}s` }}
+    >
+      <div className={`service-icon-wrap ${service.iconClass}`}>
+        {service.icon}
+      </div>
+      <h3 className="service-title">{service.title}</h3>
+      <p className="service-desc">{service.desc}</p>
+      <ul className="service-features">
+        {service.features.map((f, i) => (
+          <li key={i} className="service-feature">
+            <Check size={14} className="service-check" strokeWidth={2.5} />
+            {f}
+          </li>
+        ))}
+      </ul>
+      {service.addons && (
+        <div className="voip-addons" style={{ borderTopColor: 'var(--border)' }}>
+          <div className="voip-addons-title" style={{ color: 'var(--text-secondary)' }}>
+            Opzioni aggiuntive
+          </div>
+          <div className="voip-addon-list">
+            {voipAddons.map((a) => (
+              <div key={a.label} className="voip-addon-item" style={{ color: 'var(--text-secondary)' }}>
+                <span>{a.label}</span>
+                <span className="voip-addon-price" style={{ color: 'var(--accent-dark)' }}>
+                  {a.price}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Services() {
+  const headerRef = useScrollReveal();
+  const cctvRef = useScrollReveal();
+
   return (
     <section id="servizi" className="services-section">
       <div className="container">
-        <div className="services-header">
+        <div ref={headerRef} className="services-header reveal">
           <span className="section-badge">Servizi</span>
           <h2 className="section-title">Tutto quello di cui hai bisogno</h2>
           <p className="section-subtitle">
@@ -86,27 +126,16 @@ export default function Services() {
         </div>
 
         <div className="services-grid">
-          {/* Regular services */}
-          {services.filter((s) => !s.featured).map((service) => (
-            <div key={service.id} className="service-card">
-              <div className={`service-icon-wrap ${service.iconClass}`}>
-                {service.icon}
-              </div>
-              <h3 className="service-title">{service.title}</h3>
-              <p className="service-desc">{service.desc}</p>
-              <ul className="service-features">
-                {service.features.map((f, i) => (
-                  <li key={i} className="service-feature">
-                    <Check size={14} className="service-check" strokeWidth={2.5} />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {services.map((service, i) => (
+            <ServiceCard key={service.id} service={service} delay={i + 1} />
           ))}
 
-          {/* Featured: Videosorveglianza — full-width card */}
-          <div className="service-card featured-service">
+          {/* Featured: Videosorveglianza */}
+          <div
+            ref={cctvRef}
+            className="service-card featured-service reveal"
+            style={{ transitionDelay: '0.5s' }}
+          >
             <div className="service-icon-wrap white">
               <Camera size={26} />
             </div>
@@ -158,6 +187,23 @@ export default function Services() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            </div>
+
+            <div className="voip-addons">
+              <div className="voip-addons-title">Servizio completo incluso</div>
+              <div className="voip-addon-list">
+                {[
+                  'Sopralluogo e consulenza tecnica',
+                  'Progetto personalizzato',
+                  'Installazione pulita e ordinata',
+                  'Formazione e supporto',
+                ].map((item) => (
+                  <div key={item} className="voip-addon-item">
+                    <Check size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span>{item}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

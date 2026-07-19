@@ -1,4 +1,5 @@
 import { Phone, MapPin, Mail } from 'lucide-react';
+import NetBeeLogo from './NetBeeLogo';
 
 export default function Footer() {
   const year = new Date().getFullYear();
@@ -8,9 +9,8 @@ export default function Footer() {
       <div className="container">
         <div className="footer-grid">
           <div>
-            <a href="#" className="footer-logo">
-              <span className="logo-net">NET</span>
-              <span className="logo-bee">BEE</span>
+            <a href="#" className="footer-logo-link" aria-label="NetBee – Home">
+              <NetBeeLogo height={64} variant="light" />
             </a>
             <p className="footer-brand-desc">
               Connettività FWA radio, reti WiFi professionali, fibra ottica,
@@ -63,9 +63,6 @@ export default function Footer() {
         <div className="footer-bottom">
           <span className="footer-bottom-text">
             © {year} NetBee · N. iscrizione ROC 36441 · Canelli (AT)
-          </span>
-          <span className="footer-bottom-text">
-            Tutti i prezzi sono IVA compresa
           </span>
         </div>
       </div>

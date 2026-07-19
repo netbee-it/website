@@ -1,4 +1,5 @@
 import { Check, X, ArrowRight } from 'lucide-react';
+import { useScrollReveal } from '../hooks/useScrollReveal';
 
 const included = [
   'Montaggio antenna FWA',
@@ -13,10 +14,13 @@ const excluded = [
 ];
 
 export default function Installation() {
+  const headerRef = useScrollReveal();
+  const card1Ref = useScrollReveal();
+  const card2Ref = useScrollReveal();
   return (
     <section id="installazione" className="installation-section">
       <div className="container">
-        <div className="installation-header">
+        <div ref={headerRef} className="installation-header reveal">
           <span className="section-badge accent">Installazione</span>
           <h2 className="section-title">Installazione FWA Radio</h2>
           <p className="section-subtitle">
@@ -27,7 +31,7 @@ export default function Installation() {
 
         <div className="installation-grid">
           {/* Standard */}
-          <div className="install-card standard">
+          <div ref={card1Ref} className="install-card standard reveal">
             <div className="install-label">Opzione Standard</div>
             <div className="install-price">190€</div>
             <div className="install-price-sub">Pagamento unico</div>
@@ -63,7 +67,7 @@ export default function Installation() {
           </div>
 
           {/* Promo */}
-          <div className="install-card promo">
+          <div ref={card2Ref} className="install-card promo reveal" style={{ transitionDelay: '0.15s' }}>
             <div style={{
               position: 'absolute',
               top: '-14px',

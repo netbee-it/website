@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Phone } from 'lucide-react';
+import NetBeeLogo from './NetBeeLogo';
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
@@ -18,9 +19,8 @@ export default function Header() {
       <header className={`header${scrolled ? ' scrolled' : ''}`}>
         <div className="container">
           <div className="header-inner">
-            <a href="#" className="logo" onClick={closeMenu}>
-              <span className="logo-net">NET</span>
-              <span className="logo-bee">BEE</span>
+            <a href="#" className="logo-link" onClick={closeMenu} aria-label="NetBee – Home">
+              <NetBeeLogo height={52} variant="dark" />
             </a>
 
             <nav className="nav">
