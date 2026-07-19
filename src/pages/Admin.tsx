@@ -657,5 +657,3 @@ function Link({ to, className, children }: { to: string; className?: string; chi
     </a>
   );
 }
-
-export default Admin
