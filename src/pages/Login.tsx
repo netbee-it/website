@@ -5,10 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
 export default function Login() {
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -20,16 +19,10 @@ export default function Login() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const fn = mode === 'signin' ? signIn : signUp;
-    const { error } = await fn(email.trim(), password);
+    const { error } = await signIn(email.trim(), password);
     setLoading(false);
     if (error) {
       setError(error);
-      return;
-    }
-    if (mode === 'signup') {
-      setError('Account creato. Ora puoi accedere.');
-      setMode('signin');
       return;
     }
     navigate(from, { replace: true });
@@ -50,13 +43,9 @@ export default function Login() {
           <Radio size={26} />
         </div>
 
-        <h1 className="auth-title">
-          {mode === 'signin' ? 'Area Amministrazione' : 'Crea account amministratore'}
-        </h1>
+        <h1 className="auth-title">Area Amministrazione</h1>
         <p className="auth-subtitle">
-          {mode === 'signin'
-            ? 'Accedi per gestire le stazioni BTS del network FWA.'
-            : 'Registrati per gestire le stazioni BTS del network FWA.'}
+          Accedi per gestire le stazioni BTS e gli utenti del network FWA.
         </p>
 
         <form className="auth-form" onSubmit={handleSubmit}>
@@ -85,7 +74,7 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                autoComplete="current-password"
                 placeholder="••••••••"
               />
             </div>
@@ -95,17 +84,13 @@ export default function Login() {
 
           <button type="submit" className="btn btn-primary btn-lg auth-submit" disabled={loading}>
             {loading && <Loader2 size={18} className="spin" />}
-            {mode === 'signin' ? 'Accedi' : 'Crea account'}
+            Accedi
           </button>
         </form>
 
-        <div className="auth-switch">
-          {mode === 'signin' ? (
-            <>Non hai un account? <button onClick={() => { setMode('signup'); setError(null); }}>Registrati</button></>
-          ) : (
-            <>Hai già un account? <button onClick={() => { setMode('signin'); setError(null); }}>Accedi</button></>
-          )}
-        </div>
+        <p className="auth-help">
+          Non hai un account? Contatta un amministratore esistente per fartene creare uno.
+        </p>
       </div>
     </div>
   );

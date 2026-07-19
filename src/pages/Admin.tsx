@@ -5,13 +5,20 @@ import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
-  ArrowLeft, AlertCircle,
+  ArrowLeft, AlertCircle, Users, UserPlus, Shield,
 } from 'lucide-react';
 import { supabase, Bts, BtsInput } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
 const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
+
+interface AdminUser {
+  id: string;
+  email: string;
+  created_at: string;
+  last_sign_in_at: string | null;
+}
 
 function btsIcon(active: boolean): Icon {
   return new Icon({
@@ -88,7 +95,7 @@ function formToInput(f: FormState): BtsInput {
 }
 
 export default function Admin() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, signOut, session } = useAuth();
   const navigate = useNavigate();
   const [btsList, setBtsList] = useState<Bts[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,6 +105,14 @@ export default function Admin() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'bts' | 'users'>('bts');
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const loadBts = useCallback(async () => {
     setLoading(true);
@@ -120,6 +135,89 @@ export default function Admin() {
   useEffect(() => {
     if (user) loadBts();
   }, [user, loadBts]);
+
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    setError(null);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users`;
+      const resp = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Admin users API ${resp.status}: ${txt}`);
+      }
+      const json = await resp.json();
+      setAdminUsers(json.users ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Errore caricamento utenti');
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (user && tab === 'users') loadUsers();
+  }, [user, tab, loadUsers]);
+
+  const handleCreateUser = async (e: FormEvent) => {
+    e.preventDefault();
+    setSavingUser(true);
+    setError(null);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ email: newEmail.trim(), password: newPassword }),
+      });
+      if (!resp.ok) {
+        const txt = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(txt.error || `Errore ${resp.status}`);
+      }
+      setNewEmail('');
+      setNewPassword('');
+      setShowUserForm(false);
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Errore creazione utente');
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  const handleDeleteUser = async (u: AdminUser) => {
+    if (!confirm(`Eliminare l'account ${u.email}? L'accesso verrà revocato immediatamente.`)) return;
+    setDeletingUserId(u.id);
+    setError(null);
+    try {
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-users?id=${u.id}`;
+      const resp = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+      });
+      if (!resp.ok) {
+        const txt = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(txt.error || `Errore ${resp.status}`);
+      }
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Errore eliminazione utente');
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
 
   const openNew = () => {
     setEditing(null);
@@ -220,14 +318,23 @@ export default function Admin() {
             <Link to="/" className="admin-back-link">
               <ArrowLeft size={14} /> Sito pubblico
             </Link>
-            <h1 className="admin-h1">Stazioni BTS</h1>
-            <p className="admin-sub">
-              {btsList.length} BTS configurate · {btsList.filter((b) => b.active).length} attive
-            </p>
+            <h1 className="admin-h1">Pannello di amministrazione</h1>
+            <p className="admin-sub">Connesso come {user.email}</p>
           </div>
-          <button className="btn btn-primary" onClick={openNew}>
-            <Plus size={18} /> Aggiungi BTS
-          </button>
+          <div className="admin-tabs">
+            <button
+              className={`admin-tab${tab === 'bts' ? ' active' : ''}`}
+              onClick={() => setTab('bts')}
+            >
+              <Radio size={15} /> Stazioni BTS
+            </button>
+            <button
+              className={`admin-tab${tab === 'users' ? ' active' : ''}`}
+              onClick={() => setTab('users')}
+            >
+              <Users size={15} /> Amministratori
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -238,7 +345,21 @@ export default function Admin() {
           </div>
         )}
 
-        <div className="admin-layout">
+        {tab === 'bts' && (
+          <>
+            <div className="admin-section-head">
+              <div>
+                <h2 className="admin-h2">Stazioni BTS</h2>
+                <p className="admin-sub">
+                  {btsList.length} BTS configurate · {btsList.filter((b) => b.active).length} attive
+                </p>
+              </div>
+              <button className="btn btn-primary" onClick={openNew}>
+                <Plus size={18} /> Aggiungi BTS
+              </button>
+            </div>
+
+            <div className="admin-layout">
           <div className="admin-list">
             {loading ? (
               <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
@@ -305,6 +426,56 @@ export default function Admin() {
             <div className="admin-map-hint">Clicca sulla mappa per prelevare coordinate</div>
           </div>
         </div>
+        </>
+        )}
+
+        {tab === 'users' && (
+          <div className="admin-users">
+            <div className="admin-section-head">
+              <div>
+                <h2 className="admin-h2">Amministratori</h2>
+                <p className="admin-sub">{adminUsers.length} account con accesso al pannello</p>
+              </div>
+              <button className="btn btn-primary" onClick={() => setShowUserForm(true)}>
+                <UserPlus size={18} /> Nuovo amministratore
+              </button>
+            </div>
+
+            {loadingUsers ? (
+              <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
+            ) : adminUsers.length === 0 ? (
+              <div className="admin-empty"><Users size={32} /><p>Nessun utente.</p></div>
+            ) : (
+              <ul className="bts-list">
+                {adminUsers.map((u) => (
+                  <li key={u.id} className="bts-item">
+                    <div className="bts-item-status">
+                      <Shield size={16} className="admin-user-shield" />
+                    </div>
+                    <div className="bts-item-main">
+                      <div className="bts-item-name">{u.email}</div>
+                      <div className="bts-item-meta">
+                        Creato {new Date(u.created_at).toLocaleDateString('it-IT')}
+                        {u.last_sign_in_at && ` · ultimo accesso ${new Date(u.last_sign_in_at).toLocaleString('it-IT')}`}
+                        {u.id === user.id && ' · (tu)'}
+                      </div>
+                    </div>
+                    <div className="bts-item-actions">
+                      <button
+                        onClick={() => handleDeleteUser(u)}
+                        className="icon-btn danger"
+                        title="Elimina account"
+                        disabled={u.id === user.id || deletingUserId === u.id}
+                      >
+                        {deletingUserId === u.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </main>
 
       {showForm && (
@@ -433,6 +604,47 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {showUserForm && (
+        <div className="modal-backdrop" onClick={() => setShowUserForm(false)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>Nuovo amministratore</h2>
+              <button onClick={() => setShowUserForm(false)} className="icon-btn"><X size={18} /></button>
+            </div>
+            <form className="bts-form" onSubmit={handleCreateUser}>
+              <label className="form-field">
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                  placeholder="nuovo.admin@netbee.it"
+                />
+              </label>
+              <label className="form-field">
+                <span>Password (min 6 caratteri)</span>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="••••••••"
+                />
+              </label>
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={() => setShowUserForm(false)}>Annulla</button>
+                <button type="submit" className="btn btn-primary" disabled={savingUser}>
+                  {savingUser ? <Loader2 size={18} className="spin" /> : <UserPlus size={18} />}
+                  Crea account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -445,3 +657,6 @@ function Link({ to, className, children }: { to: string; className?: string; chi
     </a>
   );
 }
+
+
+export default Admin
