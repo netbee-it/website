@@ -1,9 +1,9 @@
-import { useState, useCallback, useRef, FormEvent, useEffect } from 'react';
+import { useState, useRef, FormEvent, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle, Signal, MapPin, Zap, TrendingUp } from 'lucide-react';
-import { Bts, CoverageResult, checkCoverage, supabase } from '../lib/supabase';
+import { CoverageResult, checkCoverage } from '../lib/supabase';
 
 const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
 
@@ -17,20 +17,6 @@ function customerIcon(): Icon {
     )}`,
     iconSize: [26, 26],
     iconAnchor: [13, 24],
-  });
-}
-
-function btsIcon(quality: CoverageResult['link_quality']): Icon {
-  const color = quality === 'good' ? '#16a34a' : quality === 'marginal' ? '#e29743' : '#94a3b8';
-  return new Icon({
-    iconUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-        <circle cx="14" cy="14" r="12" fill="${color}" stroke="#fff" stroke-width="2"/>
-        <circle cx="14" cy="14" r="4" fill="#fff"/>
-      </svg>`,
-    )}`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
   });
 }
 
@@ -74,7 +60,6 @@ const QUALITY_LABELS: Record<CoverageResult['link_quality'], string> = {
 };
 
 export default function Copertura() {
-  const [btsList, setBtsList] = useState<Bts[]>([]);
   const [loadingBts, setLoadingBts] = useState(true);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -86,20 +71,9 @@ export default function Copertura() {
   const [selectedResult, setSelectedResult] = useState<CoverageResult | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  const loadBts = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('bts')
-      .select('id,name,lat,lng,antenna_height_m,frequency_ghz,tx_power_dbm,antenna_gain_dbi,rx_sensitivity_dbm,cable_loss_db,azimuth_deg,tilt_deg,max_range_km,active')
-      .eq('active', true)
-      .order('name');
-    if (error) throw new Error('Errore caricamento BTS');
-    setBtsList((data ?? []) as Bts[]);
+  useEffect(() => {
     setLoadingBts(false);
   }, []);
-
-  useEffect(() => {
-    loadBts().catch((e) => { setError(e.message); setLoadingBts(false); });
-  }, [loadBts]);
 
   const geocode = async (e: FormEvent) => {
     e.preventDefault();
@@ -219,17 +193,6 @@ export default function Copertura() {
               <ClickHandler onClick={handleMapClick} />
               <Geolocate />
               <FlyTo center={flyTarget} />
-              {btsList.map((b) => {
-                const r = results?.find((x) => x.bts.id === b.id);
-                return (
-                  <Marker
-                    key={b.id}
-                    position={[b.lat, b.lng]}
-                    icon={btsIcon(r?.link_quality ?? 'out_of_range')}
-                  >
-                  </Marker>
-                );
-              })}
               {customerPos && (
                 <Marker position={[customerPos.lat, customerPos.lng]} icon={customerIcon()}>
                 </Marker>
@@ -247,7 +210,6 @@ export default function Copertura() {
               <div className="cop-empty">
                 <Radio size={36} />
                 <p>Inserisci un indirizzo o clicca sulla mappa per verificare la copertura.</p>
-                <p className="cop-empty-sub">{btsList.length} BTS attive nel network</p>
               </div>
             ) : checking ? (
               <div className="cop-empty">
@@ -340,11 +302,11 @@ export default function Copertura() {
                       </div>
                       <div className="cop-bts-main">
                         <div className="cop-bts-name">
-                          {r.bts.name}
+                          Stazione {String.fromCharCode(65 + results.indexOf(r) + 1)}
                           <span className={`cop-q-tag q-${r.link_quality}`}>{QUALITY_LABELS[r.link_quality]}</span>
                         </div>
                         <div className="cop-bts-meta">
-                          {r.distance_km} km · {r.bts.frequency_ghz} GHz
+                          {r.distance_km} km
                           {r.recommendation.recommended_profile && ` · ${r.recommendation.recommended_profile.label}`}
                         </div>
                         <div className="cop-bts-detail">
@@ -384,7 +346,7 @@ export default function Copertura() {
         {selectedResult && selectedResult.profile.length > 0 && (
           <div className="cop-profile" ref={profileRef}>
             <div className="cop-profile-head">
-              <h3>Profilo altimetrico — {selectedResult.bts.name}</h3>
+              <h3>Profilo altimetrico</h3>
               <button onClick={() => setSelectedResult(null)} className="icon-btn"><X size={16} /></button>
             </div>
             <CoverageChart result={selectedResult} />
@@ -392,7 +354,6 @@ export default function Copertura() {
               <span><i className="legend-line los" /> Linea di vista (LOS)</span>
               <span><i className="legend-line terrain" /> Terreno (DEM)</span>
               <span>Distanza totale: {selectedResult.distance_km} km</span>
-              <span>Frequenza: {selectedResult.bts.frequency_ghz} GHz</span>
             </div>
           </div>
         )}
