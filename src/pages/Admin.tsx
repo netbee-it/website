@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -57,6 +57,21 @@ function ClickHandler({ onClick }: { onClick: (lat: number, lng: number) => void
       onClick(e.latlng.lat, e.latlng.lng);
     },
   });
+  return null;
+}
+
+function Geolocate() {
+  const map = useMap();
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        map.flyTo([pos.coords.latitude, pos.coords.longitude], 13, { duration: 1 });
+      },
+      () => {},
+      { timeout: 8000, maximumAge: 60000 },
+    );
+  }, [map]);
   return null;
 }
 
@@ -639,7 +654,7 @@ export default function Admin() {
               </div>
 
               <div className="admin-map">
-                <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
+                <MapContainer center={DEFAULT_CENTER} zoom={13} className="admin-map-container">
                   <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
                   <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
                   <TileLayer
@@ -647,6 +662,7 @@ export default function Admin() {
                     attribution='Esri, HERE, Garmin, OpenStreetMap'
                   />
                   <ClickHandler onClick={pickOnMap} />
+                  <Geolocate />
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
                       <Popup>
@@ -729,7 +745,7 @@ export default function Admin() {
               </div>
 
               <div className="admin-tech-right">
-                <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
+                <MapContainer center={DEFAULT_CENTER} zoom={13} className="admin-map-container">
                   <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
                   <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
                   <TileLayer
@@ -737,6 +753,7 @@ export default function Admin() {
                     attribution='Esri, HERE, Garmin, OpenStreetMap'
                   />
                   <ClickHandler onClick={handleTechMapClick} />
+                  <Geolocate />
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
                       <Popup>

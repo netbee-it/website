@@ -51,6 +51,21 @@ function ClickHandler({ onClick }: { onClick: (lat: number, lng: number) => void
   return null;
 }
 
+function Geolocate() {
+  const map = useMap();
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        map.flyTo([pos.coords.latitude, pos.coords.longitude], 13, { duration: 1 });
+      },
+      () => {},
+      { timeout: 8000, maximumAge: 60000 },
+    );
+  }, [map]);
+  return null;
+}
+
 const QUALITY_LABELS: Record<CoverageResult['link_quality'], string> = {
   good: 'Ottima',
   marginal: 'Marginale',
@@ -192,7 +207,7 @@ export default function Copertura() {
 
         <div className="cop-layout">
           <div className="cop-map-wrap">
-            <MapContainer center={DEFAULT_CENTER} zoom={9} className="cop-map">
+            <MapContainer center={DEFAULT_CENTER} zoom={13} className="cop-map">
               <TileLayer
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                 attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
@@ -206,6 +221,7 @@ export default function Copertura() {
                 attribution='Esri, HERE, Garmin, OpenStreetMap'
               />
               <ClickHandler onClick={handleMapClick} />
+              <Geolocate />
               <FlyTo center={flyTarget} />
               {btsList.map((b) => {
                 const r = results?.find((x) => x.bts.id === b.id);
