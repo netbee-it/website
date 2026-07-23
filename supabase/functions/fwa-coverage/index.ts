@@ -22,14 +22,6 @@ const CLIENT = {
   cable_loss_db: 0.5,
 } as const;
 
-const SERVICE_PROFILES = [
-  { code: "NBEE50", label: "NBEE 50", download_mbps: 50, upload_mbps: 8, price_bimonthly: 28.00, price_yearly: 25.75, requires_coverage_check: false, category: "privati" },
-  { code: "NBEE100", label: "NBEE 100", download_mbps: 100, upload_mbps: 16, price_bimonthly: 34.00, price_yearly: 31.50, requires_coverage_check: false, category: "privati" },
-  { code: "NBEE200", label: "NBEE 200", download_mbps: 200, upload_mbps: 40, price_bimonthly: 42.00, price_yearly: 38.50, requires_coverage_check: true, category: "privati" },
-  { code: "NBEE100_PRO", label: "NBEE 100 Pro", download_mbps: 100, upload_mbps: 24, price_bimonthly: 32.00, price_yearly: 29.50, requires_coverage_check: false, category: "business" },
-  { code: "NBEE200_PRO", label: "NBEE 200 Pro", download_mbps: 200, upload_mbps: 50, price_bimonthly: 49.00, price_yearly: 38.50, requires_coverage_check: true, category: "business" },
-] as const;
-
 const MCS_TABLE: { threshold_db: number; modulation: string; efficiency: number }[] = [
   { threshold_db: 3, modulation: "BPSK 1/2", efficiency: 0.5 },
   { threshold_db: 6, modulation: "QPSK 1/2", efficiency: 1.0 },
@@ -61,6 +53,21 @@ interface Bts {
   notes: string | null;
 }
 
+interface ServiceProfile {
+  id: string;
+  code: string;
+  label: string;
+  download_mbps: number;
+  upload_mbps: number;
+  price_bimonthly: number;
+  price_yearly: number;
+  yearly_enabled: boolean;
+  requires_coverage_check: boolean;
+  category: string;
+  active: boolean;
+  sort_order: number;
+}
+
 interface CoverageRequest {
   lat: number;
   lng: number;
@@ -81,7 +88,7 @@ interface LinkBudgetDetails {
 }
 
 interface ProfileRecommendation {
-  recommended_profile: typeof SERVICE_PROFILES[number] | null;
+  recommended_profile: ServiceProfile | null;
   achievable_download_mbps: number;
   achievable_upload_mbps: number;
   confidence: "high" | "medium" | "low";
@@ -272,6 +279,7 @@ function recommendProfile(
   linkQuality: CoverageResult["link_quality"],
   throughputDown: number,
   throughputUp: number,
+  profiles: ServiceProfile[],
 ): ProfileRecommendation {
   const deratedDown = throughputDown * 0.8;
   const deratedUp = throughputUp * 0.8;
@@ -288,9 +296,12 @@ function recommendProfile(
 
   const confidence = linkQuality === "good" ? "high" : "medium";
 
-  let best: typeof SERVICE_PROFILES[number] | null = null;
-  for (const p of SERVICE_PROFILES) {
-    if (p.category !== "privati") continue;
+  const eligible = profiles
+    .filter((p) => p.active && p.category === "privati")
+    .sort((a, b) => a.download_mbps - b.download_mbps);
+
+  let best: ServiceProfile | null = null;
+  for (const p of eligible) {
     if (deratedDown >= p.download_mbps && deratedUp >= p.upload_mbps) {
       best = p;
     }
@@ -308,7 +319,7 @@ function recommendProfile(
 
   const reason = linkQuality === "good"
     ? `Copertura ottima — profilo consigliato: ${best.label} (${best.download_mbps}/${best.upload_mbps} Mbps).`
-    : `Copertura marginale — profillo consigliato: ${best.label}. Richiede sopralluogo di conferma.`;
+    : `Copertura marginale — profilo consigliato: ${best.label}. Richiede sopralluogo di conferma.`;
 
   return {
     recommended_profile: best,
@@ -373,6 +384,16 @@ Deno.serve(async (req: Request) => {
       .eq("active", true);
 
     if (btsError) throw new Error(`DB error: ${btsError.message}`);
+
+    const { data: profileList, error: profileError } = await supabase
+      .from("service_profiles")
+      .select("*")
+      .order("sort_order");
+
+    if (profileError) throw new Error(`DB error: ${profileError.message}`);
+
+    const profiles: ServiceProfile[] = (profileList ?? []) as ServiceProfile[];
+
     if (!btsList || btsList.length === 0) {
       return new Response(
         JSON.stringify({ results: [], customer: { lat: body.lat, lng: body.lng }, message: "Nessuna BTS attiva configurata" }),
@@ -398,7 +419,7 @@ Deno.serve(async (req: Request) => {
           path_clear: false,
           link_quality: classifyQuality(withinMaxRange, azimuthOk, false, null),
           link_budget: lb,
-          recommendation: recommendProfile("out_of_range", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
+          recommendation: recommendProfile("out_of_range", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
           profile: [],
         });
         continue;
@@ -424,7 +445,7 @@ Deno.serve(async (req: Request) => {
           path_clear: false,
           link_quality: "blocked",
           link_budget: lb,
-          recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
+          recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
           profile: [],
         });
         console.error(`Elevation fetch failed for BTS ${bts.id}:`, err.message);
@@ -449,7 +470,7 @@ Deno.serve(async (req: Request) => {
         path_clear: analysis.pathClear,
         link_quality: quality,
         link_budget: lb,
-        recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
+        recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
         profile: analysis.profile,
       });
     }

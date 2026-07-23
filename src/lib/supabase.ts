@@ -44,15 +44,23 @@ export interface CoverageProfilePoint {
 }
 
 export interface ServiceProfile {
-  code: 'NBEE50' | 'NBEE100' | 'NBEE200' | 'NBEE100_PRO' | 'NBEE200_PRO';
+  id: string;
+  code: string;
   label: string;
   download_mbps: number;
   upload_mbps: number;
   price_bimonthly: number;
   price_yearly: number;
+  yearly_enabled: boolean;
   requires_coverage_check: boolean;
   category: 'privati' | 'business';
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 }
+
+export type ServiceProfileInput = Omit<ServiceProfile, 'id' | 'created_at' | 'updated_at'>;
 
 export interface LinkBudgetDetails {
   eirp_dbm: number;

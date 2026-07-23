@@ -194,8 +194,12 @@ export default function Copertura() {
           <div className="cop-map-wrap">
             <MapContainer center={DEFAULT_CENTER} zoom={9} className="cop-map">
               <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; OpenStreetMap'
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+              />
+              <TileLayer
+                url="https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png"
+                attribution='&copy; Stamen Design'
               />
               <ClickHandler onClick={handleMapClick} />
               <FlyTo center={flyTarget} />
@@ -295,10 +299,12 @@ export default function Copertura() {
                               <span className="cop-price-val">{p.price_bimonthly.toFixed(2)}€</span>
                               <span className="cop-price-label">/mese · contratto bimestrale</span>
                             </div>
-                            <div className="cop-price-tag cop-price-yearly">
-                              <span className="cop-price-val">{p.price_yearly.toFixed(2)}€</span>
-                              <span className="cop-price-label">/mese · contratto annuale</span>
-                            </div>
+                            {p.yearly_enabled && (
+                              <div className="cop-price-tag cop-price-yearly">
+                                <span className="cop-price-val">{p.price_yearly.toFixed(2)}€</span>
+                                <span className="cop-price-label">/mese · contratto annuale</span>
+                              </div>
+                            )}
                           </div>
                           {p.requires_coverage_check && (
                             <div className="cop-profile-verified">

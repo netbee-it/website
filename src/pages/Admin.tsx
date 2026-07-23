@@ -5,13 +5,18 @@ import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
-  ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap,
+  ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap, Tag,
 } from 'lucide-react';
-import { supabase, Bts, BtsInput, CoverageResult, checkCoverage } from '../lib/supabase';
+import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
 const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
+
+const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_ATTR = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics';
+const LABELS_URL = 'https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png';
+const LABELS_ATTR = '&copy; Stamen Design';
 
 interface AdminUser {
   id: string;
@@ -30,6 +35,19 @@ function btsIcon(active: boolean): Icon {
     )}`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
+  });
+}
+
+function customerIcon(): Icon {
+  return new Icon({
+    iconUrl: `data:image/svg+xml;utf8,${encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+        <path d="M13 1 L25 24 L1 24 Z" fill="#e29743" stroke="#fff" stroke-width="2"/>
+        <circle cx="13" cy="18" r="3" fill="#fff"/>
+      </svg>`,
+    )}`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 24],
   });
 }
 
@@ -104,6 +122,58 @@ function formToInput(f: FormState): BtsInput {
   };
 }
 
+interface ProfileFormState {
+  code: string;
+  label: string;
+  download_mbps: string;
+  upload_mbps: string;
+  price_bimonthly: string;
+  price_yearly: string;
+  yearly_enabled: boolean;
+  requires_coverage_check: boolean;
+  category: 'privati' | 'business';
+  active: boolean;
+  sort_order: string;
+}
+
+const emptyProfileForm: ProfileFormState = {
+  code: '', label: '', download_mbps: '50', upload_mbps: '8',
+  price_bimonthly: '28', price_yearly: '25', yearly_enabled: false,
+  requires_coverage_check: false, category: 'privati', active: true, sort_order: '1',
+};
+
+function profileFormFromProfile(p: ServiceProfile): ProfileFormState {
+  return {
+    code: p.code,
+    label: p.label,
+    download_mbps: String(p.download_mbps),
+    upload_mbps: String(p.upload_mbps),
+    price_bimonthly: String(p.price_bimonthly),
+    price_yearly: String(p.price_yearly),
+    yearly_enabled: p.yearly_enabled,
+    requires_coverage_check: p.requires_coverage_check,
+    category: p.category as 'privati' | 'business',
+    active: p.active,
+    sort_order: String(p.sort_order),
+  };
+}
+
+function profileFormToInput(f: ProfileFormState): ServiceProfileInput {
+  return {
+    code: f.code.trim().toUpperCase(),
+    label: f.label.trim(),
+    download_mbps: parseInt(f.download_mbps, 10),
+    upload_mbps: parseInt(f.upload_mbps, 10),
+    price_bimonthly: parseFloat(f.price_bimonthly),
+    price_yearly: parseFloat(f.price_yearly),
+    yearly_enabled: f.yearly_enabled,
+    requires_coverage_check: f.requires_coverage_check,
+    category: f.category,
+    active: f.active,
+    sort_order: parseInt(f.sort_order, 10) || 0,
+  };
+}
+
 const QUALITY_LABELS: Record<CoverageResult['link_quality'], string> = {
   good: 'Ottima',
   marginal: 'Marginale',
@@ -122,7 +192,7 @@ export default function Admin() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'bts' | 'tech' | 'users'>('bts');
+  const [tab, setTab] = useState<'bts' | 'tech' | 'profiles' | 'users'>('bts');
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
@@ -140,6 +210,15 @@ export default function Admin() {
   const [techError, setTechError] = useState<string | null>(null);
   const [techCah, setTechCah] = useState('5');
 
+  // Profiles state
+  const [profileList, setProfileList] = useState<ServiceProfile[]>([]);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<ServiceProfile | null>(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileFormState>(emptyProfileForm);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+
   const loadBts = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -152,6 +231,18 @@ export default function Admin() {
     setLoading(false);
   }, []);
 
+  const loadProfiles = useCallback(async () => {
+    setLoadingProfiles(true);
+    setError(null);
+    const { data, error } = await supabase.from('service_profiles').select('*').order('sort_order');
+    if (error) {
+      setError(error.message);
+    } else {
+      setProfileList((data ?? []) as ServiceProfile[]);
+    }
+    setLoadingProfiles(false);
+  }, []);
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login', { state: { from: '/admin' }, replace: true });
@@ -161,6 +252,10 @@ export default function Admin() {
   useEffect(() => {
     if (user) loadBts();
   }, [user, loadBts]);
+
+  useEffect(() => {
+    if (user && tab === 'profiles') loadProfiles();
+  }, [user, tab, loadProfiles]);
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -345,6 +440,66 @@ export default function Admin() {
     setTechChecking(false);
   };
 
+  const handleTechMapClick = (lat: number, lng: number) => {
+    const pos = { lat, lng };
+    setTechPos(pos);
+    setTechQuery('');
+    runTechCheck(pos);
+  };
+
+  // Profile CRUD handlers
+  const openNewProfile = () => {
+    setEditingProfile(null);
+    setProfileForm(emptyProfileForm);
+    setShowProfileForm(true);
+  };
+
+  const openEditProfile = (p: ServiceProfile) => {
+    setEditingProfile(p);
+    setProfileForm(profileFormFromProfile(p));
+    setShowProfileForm(true);
+  };
+
+  const closeProfileForm = () => {
+    setShowProfileForm(false);
+    setEditingProfile(null);
+  };
+
+  const handleProfileSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    setError(null);
+    const input = profileFormToInput(profileForm);
+    if (!input.code || !input.label) {
+      setError('Codice e nome sono obbligatori.');
+      setSavingProfile(false);
+      return;
+    }
+    let err;
+    if (editingProfile) {
+      ({ error: err } = await supabase.from('service_profiles').update(input).eq('id', editingProfile.id));
+    } else {
+      ({ error: err } = await supabase.from('service_profiles').insert(input));
+    }
+    if (err) {
+      setError(err.message);
+      setSavingProfile(false);
+      return;
+    }
+    setSavingProfile(false);
+    closeProfileForm();
+    await loadProfiles();
+  };
+
+  const handleDeleteProfile = async (p: ServiceProfile) => {
+    if (!confirm(`Eliminare il profilo "${p.label}"? L'operazione non è reversibile.`)) return;
+    setDeletingProfileId(p.id);
+    const { error } = await supabase.from('service_profiles').delete().eq('id', p.id);
+    if (error) setError(error.message);
+    else await loadProfiles();
+    setDeletingProfileId(null);
+  };
+
   if (authLoading) {
     return (
       <div className="admin-loading">
@@ -400,6 +555,12 @@ export default function Admin() {
               <Gauge size={15} /> Verifica Tecnica
             </button>
             <button
+              className={`admin-tab${tab === 'profiles' ? ' active' : ''}`}
+              onClick={() => setTab('profiles')}
+            >
+              <Tag size={15} /> Profili
+            </button>
+            <button
               className={`admin-tab${tab === 'users' ? ' active' : ''}`}
               onClick={() => setTab('users')}
             >
@@ -431,73 +592,71 @@ export default function Admin() {
             </div>
 
             <div className="admin-layout">
-          <div className="admin-list">
-            {loading ? (
-              <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
-            ) : btsList.length === 0 ? (
-              <div className="admin-empty">
-                <Radio size={32} />
-                <p>Nessuna BTS configurata.</p>
-                <button className="btn btn-primary" onClick={openNew}>
-                  <Plus size={18} /> Aggiungi la prima BTS
-                </button>
+              <div className="admin-list">
+                {loading ? (
+                  <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
+                ) : btsList.length === 0 ? (
+                  <div className="admin-empty">
+                    <Radio size={32} />
+                    <p>Nessuna BTS configurata.</p>
+                    <button className="btn btn-primary" onClick={openNew}>
+                      <Plus size={18} /> Aggiungi la prima BTS
+                    </button>
+                  </div>
+                ) : (
+                  <ul className="bts-list">
+                    {btsList.map((b) => (
+                      <li key={b.id} className={`bts-item${b.active ? '' : ' inactive'}`}>
+                        <div className="bts-item-status">
+                          <span className={`bts-status-dot ${b.active ? 'on' : 'off'}`} />
+                        </div>
+                        <div className="bts-item-main">
+                          <div className="bts-item-name">{b.name}</div>
+                          <div className="bts-item-meta">
+                            {b.lat.toFixed(5)}, {b.lng.toFixed(5)} · h={b.antenna_height_m}m ·
+                            {b.frequency_ghz}GHz · {b.tx_power_dbm}dBm · {b.antenna_gain_dbi}dBi · r={b.max_range_km}km
+                            {b.azimuth_deg !== null && ` · az=${b.azimuth_deg}°`}
+                          </div>
+                          {b.notes && <div className="bts-item-notes">{b.notes}</div>}
+                        </div>
+                        <div className="bts-item-actions">
+                          <button onClick={() => openEdit(b)} className="icon-btn" title="Modifica">
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(b)}
+                            className="icon-btn danger"
+                            title="Elimina"
+                            disabled={deletingId === b.id}
+                          >
+                            {deletingId === b.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            ) : (
-              <ul className="bts-list">
-                {btsList.map((b) => (
-                  <li key={b.id} className={`bts-item${b.active ? '' : ' inactive'}`}>
-                    <div className="bts-item-status">
-                      <span className={`bts-status-dot ${b.active ? 'on' : 'off'}`} />
-                    </div>
-                    <div className="bts-item-main">
-                      <div className="bts-item-name">{b.name}</div>
-                      <div className="bts-item-meta">
-                        {b.lat.toFixed(5)}, {b.lng.toFixed(5)} · h={b.antenna_height_m}m ·
-                        {b.frequency_ghz}GHz · {b.tx_power_dbm}dBm · {b.antenna_gain_dbi}dBi · r={b.max_range_km}km
-                        {b.azimuth_deg !== null && ` · az=${b.azimuth_deg}°`}
-                      </div>
-                      {b.notes && <div className="bts-item-notes">{b.notes}</div>}
-                    </div>
-                    <div className="bts-item-actions">
-                      <button onClick={() => openEdit(b)} className="icon-btn" title="Modifica">
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(b)}
-                        className="icon-btn danger"
-                        title="Elimina"
-                        disabled={deletingId === b.id}
-                      >
-                        {deletingId === b.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
 
-          <div className="admin-map">
-            <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; OpenStreetMap'
-              />
-              <ClickHandler onClick={pickOnMap} />
-              {btsList.map((b) => (
-                <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
-                  <Popup>
-                    <strong>{b.name}</strong><br />
-                    {b.frequency_ghz} GHz · h{b.antenna_height_m}m · {b.antenna_gain_dbi}dBi · r{b.max_range_km}km<br />
-                    {b.active ? 'Attiva' : 'Disattivata'}
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
-            <div className="admin-map-hint">Clicca sulla mappa per prelevare coordinate</div>
-          </div>
-        </div>
-        </>
+              <div className="admin-map">
+                <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
+                  <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
+                  <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                  <ClickHandler onClick={pickOnMap} />
+                  {btsList.map((b) => (
+                    <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
+                      <Popup>
+                        <strong>{b.name}</strong><br />
+                        {b.frequency_ghz} GHz · h{b.antenna_height_m}m · {b.antenna_gain_dbi}dBi · r{b.max_range_km}km<br />
+                        {b.active ? 'Attiva' : 'Disattivata'}
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+                <div className="admin-map-hint">Clicca sulla mappa per prelevare coordinate</div>
+              </div>
+            </div>
+          </>
         )}
 
         {tab === 'tech' && (
@@ -509,58 +668,148 @@ export default function Admin() {
               </div>
             </div>
 
-            <form className="cop-search" onSubmit={techGeocode}>
-              <div className="cop-search-input">
-                <Search size={18} />
-                <input
-                  type="text"
-                  value={techQuery}
-                  onChange={(e) => setTechQuery(e.target.value)}
-                  placeholder="Indirizzo o località"
-                  disabled={techSearching}
-                />
+            <div className="admin-tech-layout">
+              <div className="admin-tech-left">
+                <form className="cop-search" onSubmit={techGeocode}>
+                  <div className="cop-search-input">
+                    <Search size={18} />
+                    <input
+                      type="text"
+                      value={techQuery}
+                      onChange={(e) => setTechQuery(e.target.value)}
+                      placeholder="Indirizzo o località"
+                      disabled={techSearching}
+                    />
+                  </div>
+                  <label className="admin-tech-cah">
+                    <span>Antenna cliente (m)</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      value={techCah}
+                      onChange={(e) => setTechCah(e.target.value)}
+                      style={{ width: '70px' }}
+                    />
+                  </label>
+                  <button type="submit" className="btn btn-primary" disabled={techSearching || !techQuery.trim()}>
+                    {techSearching ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
+                    Verifica
+                  </button>
+                </form>
+
+                {techError && (
+                  <div className="admin-error-banner">
+                    <AlertCircle size={18} />
+                    <span>{techError}</span>
+                    <button onClick={() => setTechError(null)}><X size={16} /></button>
+                  </div>
+                )}
+
+                {techChecking ? (
+                  <div className="admin-empty"><Loader2 size={28} className="spin" /><p>Calcolo link budget in corso…</p></div>
+                ) : techResults && techResults.length > 0 ? (
+                  <div className="admin-tech-results">
+                    {techResults.map((r) => (
+                      <TechResultCard key={r.bts.id} result={r} />
+                    ))}
+                  </div>
+                ) : techPos ? (
+                  <div className="admin-empty"><Radio size={28} /><p>Nessun risultato.</p></div>
+                ) : (
+                  <div className="admin-empty">
+                    <Gauge size={32} />
+                    <p>Inserisci un indirizzo o clicca sulla mappa per il calcolo tecnico del link budget.</p>
+                  </div>
+                )}
               </div>
-              <label className="admin-tech-cah">
-                <span>Antenna cliente (m)</span>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="1"
-                  value={techCah}
-                  onChange={(e) => setTechCah(e.target.value)}
-                  style={{ width: '70px' }}
-                />
-              </label>
-              <button type="submit" className="btn btn-primary" disabled={techSearching || !techQuery.trim()}>
-                {techSearching ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
-                Verifica
+
+              <div className="admin-tech-right">
+                <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
+                  <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
+                  <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                  <ClickHandler onClick={handleTechMapClick} />
+                  {btsList.map((b) => (
+                    <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
+                      <Popup>
+                        <strong>{b.name}</strong><br />
+                        {b.frequency_ghz} GHz · {b.antenna_gain_dbi}dBi
+                      </Popup>
+                    </Marker>
+                  ))}
+                  {techPos && (
+                    <Marker position={[techPos.lat, techPos.lng]} icon={customerIcon()}>
+                      <Popup>
+                        <strong>Posizione cliente</strong><br />
+                        {techPos.lat.toFixed(5)}, {techPos.lng.toFixed(5)}
+                      </Popup>
+                    </Marker>
+                  )}
+                </MapContainer>
+                <div className="admin-map-hint">
+                  <MapPin size={14} /> Clicca sulla mappa per posizionare il cliente
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'profiles' && (
+          <div className="admin-users">
+            <div className="admin-section-head">
+              <div>
+                <h2 className="admin-h2">Profili Internet</h2>
+                <p className="admin-sub">
+                  {profileList.length} profili configurati · {profileList.filter((p) => p.active).length} attivi
+                </p>
+              </div>
+              <button className="btn btn-primary" onClick={openNewProfile}>
+                <Plus size={18} /> Aggiungi profilo
               </button>
-            </form>
+            </div>
 
-            {techError && (
-              <div className="admin-error-banner">
-                <AlertCircle size={18} />
-                <span>{techError}</span>
-                <button onClick={() => setTechError(null)}><X size={16} /></button>
-              </div>
-            )}
-
-            {techChecking ? (
-              <div className="admin-empty"><Loader2 size={28} className="spin" /><p>Calcolo link budget in corso…</p></div>
-            ) : techResults && techResults.length > 0 ? (
-              <div className="admin-tech-results">
-                {techResults.map((r) => (
-                  <TechResultCard key={r.bts.id} result={r} />
-                ))}
-              </div>
-            ) : techPos ? (
-              <div className="admin-empty"><Radio size={28} /><p>Nessun risultato.</p></div>
-            ) : (
+            {loadingProfiles ? (
+              <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
+            ) : profileList.length === 0 ? (
               <div className="admin-empty">
-                <Gauge size={32} />
-                <p>Inserisci un indirizzo per il calcolo tecnico del link budget.</p>
-                <p className="admin-sub">Oppure clicca sulla mappa nella scheda BTS per prelevare coordinate.</p>
+                <Tag size={32} />
+                <p>Nessun profilo configurato.</p>
+                <button className="btn btn-primary" onClick={openNewProfile}>
+                  <Plus size={18} /> Aggiungi il primo profilo
+                </button>
               </div>
+            ) : (
+              <ul className="bts-list">
+                {profileList.map((p) => (
+                  <li key={p.id} className={`bts-item${p.active ? '' : ' inactive'}`}>
+                    <div className="bts-item-status">
+                      <span className={`bts-status-dot ${p.active ? 'on' : 'off'}`} />
+                    </div>
+                    <div className="bts-item-main">
+                      <div className="bts-item-name">{p.label} <span className="profile-code-badge">{p.code}</span></div>
+                      <div className="bts-item-meta">
+                        {p.download_mbps}/{p.upload_mbps} Mbps · {p.price_bimonthly.toFixed(2)}€/mese (bim.)
+                        {p.yearly_enabled && ` · ${p.price_yearly.toFixed(2)}€/mese (ann.)`}
+                        {' · '}<span className="profile-cat-badge">{p.category}</span>
+                        {p.requires_coverage_check && ' · previa copertura'}
+                      </div>
+                    </div>
+                    <div className="bts-item-actions">
+                      <button onClick={() => openEditProfile(p)} className="icon-btn" title="Modifica">
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProfile(p)}
+                        className="icon-btn danger"
+                        title="Elimina"
+                        disabled={deletingProfileId === p.id}
+                      >
+                        {deletingProfileId === p.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}
@@ -768,6 +1017,133 @@ export default function Admin() {
         </div>
       )}
 
+      {showProfileForm && (
+        <div className="modal-backdrop" onClick={closeProfileForm}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{editingProfile ? 'Modifica profilo' : 'Nuovo profilo'}</h2>
+              <button onClick={closeProfileForm} className="icon-btn"><X size={18} /></button>
+            </div>
+            <form className="bts-form" onSubmit={handleProfileSubmit}>
+              <div className="form-row form-row-2">
+                <label className="form-field">
+                  <span>Codice *</span>
+                  <input
+                    value={profileForm.code}
+                    onChange={(e) => setProfileForm({ ...profileForm, code: e.target.value })}
+                    required
+                    placeholder="NBEE100"
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Nome visualizzato *</span>
+                  <input
+                    value={profileForm.label}
+                    onChange={(e) => setProfileForm({ ...profileForm, label: e.target.value })}
+                    required
+                    placeholder="NBEE 100"
+                  />
+                </label>
+              </div>
+
+              <div className="form-row form-row-2">
+                <label className="form-field">
+                  <span>Download (Mbps)</span>
+                  <input
+                    type="number" min="1"
+                    value={profileForm.download_mbps}
+                    onChange={(e) => setProfileForm({ ...profileForm, download_mbps: e.target.value })}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Upload (Mbps)</span>
+                  <input
+                    type="number" min="1"
+                    value={profileForm.upload_mbps}
+                    onChange={(e) => setProfileForm({ ...profileForm, upload_mbps: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="form-row form-row-2">
+                <label className="form-field">
+                  <span>Prezzo bimestrale (€/mese)</span>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={profileForm.price_bimonthly}
+                    onChange={(e) => setProfileForm({ ...profileForm, price_bimonthly: e.target.value })}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Prezzo annuale (€/mese)</span>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={profileForm.price_yearly}
+                    onChange={(e) => setProfileForm({ ...profileForm, price_yearly: e.target.value })}
+                    disabled={!profileForm.yearly_enabled}
+                  />
+                </label>
+              </div>
+
+              <div className="form-row form-row-3">
+                <label className="form-field">
+                  <span>Categoria</span>
+                  <select
+                    value={profileForm.category}
+                    onChange={(e) => setProfileForm({ ...profileForm, category: e.target.value as 'privati' | 'business' })}
+                  >
+                    <option value="privati">Privati</option>
+                    <option value="business">Business</option>
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Ordine</span>
+                  <input
+                    type="number" min="0"
+                    value={profileForm.sort_order}
+                    onChange={(e) => setProfileForm({ ...profileForm, sort_order: e.target.value })}
+                  />
+                </label>
+                <div className="form-field form-check-group">
+                  <label className="form-field form-check">
+                    <input
+                      type="checkbox"
+                      checked={profileForm.active}
+                      onChange={(e) => setProfileForm({ ...profileForm, active: e.target.checked })}
+                    />
+                    <span>Attivo</span>
+                  </label>
+                  <label className="form-field form-check">
+                    <input
+                      type="checkbox"
+                      checked={profileForm.yearly_enabled}
+                      onChange={(e) => setProfileForm({ ...profileForm, yearly_enabled: e.target.checked })}
+                    />
+                    <span>Annuale</span>
+                  </label>
+                  <label className="form-field form-check">
+                    <input
+                      type="checkbox"
+                      checked={profileForm.requires_coverage_check}
+                      onChange={(e) => setProfileForm({ ...profileForm, requires_coverage_check: e.target.checked })}
+                    />
+                    <span>Previa copert.</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={closeProfileForm}>Annulla</button>
+                <button type="submit" className="btn btn-primary" disabled={savingProfile}>
+                  {savingProfile ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                  {editingProfile ? 'Salva modifiche' : 'Crea profilo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showUserForm && (
         <div className="modal-backdrop" onClick={() => setShowUserForm(false)}>
           <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
@@ -881,7 +1257,10 @@ function TechResultCard({ result: r }: { result: CoverageResult }) {
               <div>
                 <strong>{rec.recommended_profile.label}</strong>
                 <span>{rec.recommended_profile.download_mbps}/{rec.recommended_profile.upload_mbps} Mbps</span>
-                <span>{rec.recommended_profile.price_bimonthly.toFixed(2)}€/mese (bim.) · {rec.recommended_profile.price_yearly.toFixed(2)}€/mese (ann.)</span>
+                <span>
+                  {rec.recommended_profile.price_bimonthly.toFixed(2)}€/mese (bim.)
+                  {rec.recommended_profile.yearly_enabled && ` · ${rec.recommended_profile.price_yearly.toFixed(2)}€/mese (ann.)`}
+                </span>
               </div>
             </div>
           ) : (

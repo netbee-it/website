@@ -2141,6 +2141,46 @@ body {
   line-height: 1.5;
 }
 
+.admin-tech-layout {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 20px;
+  align-items: start;
+}
+.admin-tech-left { min-width: 0; }
+.admin-tech-right {
+  position: sticky;
+  top: 80px;
+}
+.admin-tech-right .admin-map-container {
+  height: 400px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.profile-code-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(23, 82, 199, 0.1);
+  padding: 2px 8px;
+  border-radius: 100px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.profile-cat-badge {
+  text-transform: capitalize;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.form-check-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.form-check-group .form-check { margin: 0; }
+
 /* ─── Responsive Admin/Copertura ─── */
 @media (max-width: 900px) {
   .admin-layout { grid-template-columns: 1fr; }
