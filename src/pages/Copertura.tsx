@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, FormEvent, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Circle, useMap, useMapEvents } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle, Signal, MapPin } from 'lucide-react';
+import { Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle, Signal, MapPin, Zap, TrendingUp } from 'lucide-react';
 import { Bts, CoverageResult, checkCoverage, supabase } from '../lib/supabase';
 
 const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
@@ -74,7 +74,7 @@ export default function Copertura() {
   const loadBts = useCallback(async () => {
     const { data, error } = await supabase
       .from('bts')
-      .select('id,name,lat,lng,antenna_height_m,frequency_ghz,tx_power_dbm,azimuth_deg,tilt_deg,max_range_km,active')
+      .select('id,name,lat,lng,antenna_height_m,frequency_ghz,tx_power_dbm,antenna_gain_dbi,rx_sensitivity_dbm,cable_loss_db,azimuth_deg,tilt_deg,max_range_km,active')
       .eq('active', true)
       .order('name');
     if (error) throw new Error('Errore caricamento BTS');
@@ -140,7 +140,7 @@ export default function Copertura() {
     }, 50);
   };
 
-  const bestResult = results?.find((r) => r.link_quality === 'good') ?? null;
+  const bestResult = results?.find((r) => r.recommendation.recommended_profile !== null) ?? null;
   const hasAnyReachable = results?.some((r) => r.link_quality === 'good' || r.link_quality === 'marginal') ?? false;
 
   return (
@@ -246,16 +246,22 @@ export default function Copertura() {
             ) : results && results.length > 0 ? (
               <>
                 <div className={`cop-summary ${hasAnyReachable ? 'ok' : 'no'}`}>
-                  {hasAnyReachable ? (
+                  {hasAnyReachable && bestResult?.recommendation.recommended_profile ? (
                     <>
                       <Check size={22} />
                       <div>
                         <strong>Copertura disponibile</strong>
                         <span>
-                          {bestResult
-                            ? `Ottima da ${bestResult.bts.name} (${bestResult.distance_km} km)`
-                            : 'Connessione marginale — richiede sopralluogo'}
+                          Profilo consigliato: {bestResult.recommendation.recommended_profile.label} ({bestResult.recommendation.recommended_profile.download_mbps}/{bestResult.recommendation.recommended_profile.upload_mbps} Mbps)
                         </span>
+                      </div>
+                    </>
+                  ) : hasAnyReachable ? (
+                    <>
+                      <AlertTriangle size={22} />
+                      <div>
+                        <strong>Connessione marginale</strong>
+                        <span>Segnale presente ma richiede sopralluogo tecnico di conferma</span>
                       </div>
                     </>
                   ) : (
@@ -268,6 +274,45 @@ export default function Copertura() {
                     </>
                   )}
                 </div>
+
+                {bestResult?.recommendation.recommended_profile && (
+                  <div className="cop-profile-card">
+                    <div className="cop-profile-card-head">
+                      <Zap size={20} />
+                      <h3>Profilo consigliato per te</h3>
+                    </div>
+                    {(() => {
+                      const p = bestResult.recommendation.recommended_profile;
+                      return (
+                        <div className="cop-profile-card-body">
+                          <div className="cop-profile-name">{p.label}</div>
+                          <div className="cop-profile-speeds">
+                            <span><TrendingUp size={16} /> {p.download_mbps} Mbps download</span>
+                            <span><TrendingUp size={16} className="rotate-180" /> {p.upload_mbps} Mbps upload</span>
+                          </div>
+                          <div className="cop-profile-prices">
+                            <div className="cop-price-tag">
+                              <span className="cop-price-val">{p.price_bimonthly.toFixed(2)}€</span>
+                              <span className="cop-price-label">/mese · contratto bimestrale</span>
+                            </div>
+                            <div className="cop-price-tag cop-price-yearly">
+                              <span className="cop-price-val">{p.price_yearly.toFixed(2)}€</span>
+                              <span className="cop-price-label">/mese · contratto annuale</span>
+                            </div>
+                          </div>
+                          {p.requires_coverage_check && (
+                            <div className="cop-profile-verified">
+                              <Check size={14} /> Copertura verificata per questa posizione
+                            </div>
+                          )}
+                          <div className="cop-profile-confidence">
+                            Affidabilità: {bestResult.recommendation.confidence === 'high' ? 'Alta' : 'Media'}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
 
                 <ul className="cop-bts-list">
                   {results.map((r) => (
@@ -286,7 +331,7 @@ export default function Copertura() {
                         </div>
                         <div className="cop-bts-meta">
                           {r.distance_km} km · {r.bts.frequency_ghz} GHz
-                          {r.estimated_rssi_dbm !== null && ` · RSSI ${r.estimated_rssi_dbm} dBm`}
+                          {r.recommendation.recommended_profile && ` · ${r.recommendation.recommended_profile.label}`}
                         </div>
                         <div className="cop-bts-detail">
                           {!r.within_max_range && <span>Fuori raggio massimo ({r.bts.max_range_km} km)</span>}
@@ -294,12 +339,12 @@ export default function Copertura() {
                           {r.within_max_range && r.azimuth_ok && !r.path_clear && (
                             <span>
                               Line-of-sight ostruita
-                              {r.worst_obstruction_m !== null && ` (${r.worst_obstruction_m}m)`}
+                              {r.link_budget?.worst_obstruction_m !== null && r.link_budget?.worst_obstruction_m !== undefined && ` (${r.link_budget.worst_obstruction_m}m)`}
                             </span>
                           )}
                           {r.within_max_range && r.azimuth_ok && r.path_clear && (
                             <span>
-                              LOS libera · clearance Fresnel {r.fresnel_clearance_m}m
+                              LOS libera · clearance Fresnel {r.link_budget?.fresnel_clearance_m ?? 0}m
                             </span>
                           )}
                         </div>

@@ -23,6 +23,9 @@ export interface Bts {
   antenna_height_m: number;
   frequency_ghz: number;
   tx_power_dbm: number;
+  antenna_gain_dbi: number;
+  rx_sensitivity_dbm: number;
+  cable_loss_db: number;
   azimuth_deg: number | null;
   tilt_deg: number;
   max_range_km: number;
@@ -40,16 +43,47 @@ export interface CoverageProfilePoint {
   los_m: number;
 }
 
+export interface ServiceProfile {
+  code: 'NBEE50' | 'NBEE100' | 'NBEE200' | 'NBEE100_PRO' | 'NBEE200_PRO';
+  label: string;
+  download_mbps: number;
+  upload_mbps: number;
+  price_bimonthly: number;
+  price_yearly: number;
+  requires_coverage_check: boolean;
+  category: 'privati' | 'business';
+}
+
+export interface LinkBudgetDetails {
+  eirp_dbm: number;
+  fspl_db: number;
+  other_losses_db: number;
+  received_power_dbm: number;
+  fade_margin_db: number;
+  mcs_index: number;
+  modulation: string;
+  estimated_throughput_mbps: { down: number; up: number };
+  fresnel_clearance_m: number | null;
+  worst_obstruction_m: number | null;
+}
+
+export interface ProfileRecommendation {
+  recommended_profile: ServiceProfile | null;
+  achievable_download_mbps: number;
+  achievable_upload_mbps: number;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+}
+
 export interface CoverageResult {
   bts: Bts;
   distance_km: number;
   within_max_range: boolean;
   azimuth_ok: boolean;
   path_clear: boolean;
-  fresnel_clearance_m: number | null;
-  worst_obstruction_m: number | null;
-  estimated_rssi_dbm: number | null;
   link_quality: 'good' | 'marginal' | 'blocked' | 'out_of_range';
+  link_budget: LinkBudgetDetails | null;
+  recommendation: ProfileRecommendation;
   profile: CoverageProfilePoint[];
 }
 

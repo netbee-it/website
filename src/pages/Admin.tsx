@@ -5,9 +5,9 @@ import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
-  ArrowLeft, AlertCircle, Users, UserPlus, Shield,
+  ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap,
 } from 'lucide-react';
-import { supabase, Bts, BtsInput } from '../lib/supabase';
+import { supabase, Bts, BtsInput, CoverageResult, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
@@ -49,6 +49,9 @@ interface FormState {
   antenna_height_m: string;
   frequency_ghz: string;
   tx_power_dbm: string;
+  antenna_gain_dbi: string;
+  rx_sensitivity_dbm: string;
+  cable_loss_db: string;
   azimuth_deg: string;
   tilt_deg: string;
   max_range_km: string;
@@ -58,7 +61,8 @@ interface FormState {
 
 const emptyForm: FormState = {
   name: '', lat: '', lng: '', antenna_height_m: '20', frequency_ghz: '5.6',
-  tx_power_dbm: '23', azimuth_deg: '', tilt_deg: '0', max_range_km: '15',
+  tx_power_dbm: '29', antenna_gain_dbi: '20', rx_sensitivity_dbm: '-96', cable_loss_db: '0.5',
+  azimuth_deg: '', tilt_deg: '0', max_range_km: '15',
   active: true, notes: '',
 };
 
@@ -70,6 +74,9 @@ function formFromBts(b: Bts): FormState {
     antenna_height_m: String(b.antenna_height_m),
     frequency_ghz: String(b.frequency_ghz),
     tx_power_dbm: String(b.tx_power_dbm),
+    antenna_gain_dbi: String(b.antenna_gain_dbi),
+    rx_sensitivity_dbm: String(b.rx_sensitivity_dbm),
+    cable_loss_db: String(b.cable_loss_db),
     azimuth_deg: b.azimuth_deg === null ? '' : String(b.azimuth_deg),
     tilt_deg: String(b.tilt_deg),
     max_range_km: String(b.max_range_km),
@@ -86,6 +93,9 @@ function formToInput(f: FormState): BtsInput {
     antenna_height_m: parseFloat(f.antenna_height_m),
     frequency_ghz: parseFloat(f.frequency_ghz),
     tx_power_dbm: parseFloat(f.tx_power_dbm),
+    antenna_gain_dbi: parseFloat(f.antenna_gain_dbi),
+    rx_sensitivity_dbm: parseFloat(f.rx_sensitivity_dbm),
+    cable_loss_db: parseFloat(f.cable_loss_db),
     azimuth_deg: f.azimuth_deg.trim() === '' ? null : parseFloat(f.azimuth_deg),
     tilt_deg: parseFloat(f.tilt_deg),
     max_range_km: parseFloat(f.max_range_km),
@@ -93,6 +103,13 @@ function formToInput(f: FormState): BtsInput {
     notes: f.notes.trim() === '' ? null : f.notes.trim(),
   };
 }
+
+const QUALITY_LABELS: Record<CoverageResult['link_quality'], string> = {
+  good: 'Ottima',
+  marginal: 'Marginale',
+  blocked: 'Ostruita',
+  out_of_range: 'Fuori portata',
+};
 
 export default function Admin() {
   const { user, loading: authLoading, signOut, session } = useAuth();
@@ -105,7 +122,7 @@ export default function Admin() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'bts' | 'users'>('bts');
+  const [tab, setTab] = useState<'bts' | 'tech' | 'users'>('bts');
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
@@ -113,6 +130,15 @@ export default function Admin() {
   const [newPassword, setNewPassword] = useState('');
   const [savingUser, setSavingUser] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+
+  // Technical coverage check state
+  const [techQuery, setTechQuery] = useState('');
+  const [techSearching, setTechSearching] = useState(false);
+  const [techPos, setTechPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [techResults, setTechResults] = useState<CoverageResult[] | null>(null);
+  const [techChecking, setTechChecking] = useState(false);
+  const [techError, setTechError] = useState<string | null>(null);
+  const [techCah, setTechCah] = useState('5');
 
   const loadBts = useCallback(async () => {
     setLoading(true);
@@ -280,6 +306,45 @@ export default function Admin() {
     navigate('/', { replace: true });
   };
 
+  // Technical coverage check handlers
+  const techGeocode = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!techQuery.trim()) return;
+    setTechSearching(true);
+    setTechError(null);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(techQuery + ', Piemonte, Italia')}`;
+      const resp = await fetch(url, { headers: { 'Accept-Language': 'it' } });
+      if (!resp.ok) throw new Error('Ricerca indirizzo non disponibile');
+      const data = await resp.json();
+      if (!data || data.length === 0) {
+        setTechError('Indirizzo non trovato.');
+        setTechSearching(false);
+        return;
+      }
+      const { lat, lon } = data[0];
+      const pos = { lat: parseFloat(lat), lng: parseFloat(lon) };
+      setTechPos(pos);
+      await runTechCheck(pos);
+    } catch (err) {
+      setTechError(err instanceof Error ? err.message : 'Errore ricerca');
+    }
+    setTechSearching(false);
+  };
+
+  const runTechCheck = async (pos: { lat: number; lng: number }) => {
+    setTechChecking(true);
+    setTechError(null);
+    setTechResults(null);
+    try {
+      const data = await checkCoverage(pos.lat, pos.lng, parseFloat(techCah) || 5);
+      setTechResults(data.results);
+    } catch (err) {
+      setTechError(err instanceof Error ? err.message : 'Errore verifica copertura');
+    }
+    setTechChecking(false);
+  };
+
   if (authLoading) {
     return (
       <div className="admin-loading">
@@ -327,6 +392,12 @@ export default function Admin() {
               onClick={() => setTab('bts')}
             >
               <Radio size={15} /> Stazioni BTS
+            </button>
+            <button
+              className={`admin-tab${tab === 'tech' ? ' active' : ''}`}
+              onClick={() => setTab('tech')}
+            >
+              <Gauge size={15} /> Verifica Tecnica
             </button>
             <button
               className={`admin-tab${tab === 'users' ? ' active' : ''}`}
@@ -382,7 +453,7 @@ export default function Admin() {
                       <div className="bts-item-name">{b.name}</div>
                       <div className="bts-item-meta">
                         {b.lat.toFixed(5)}, {b.lng.toFixed(5)} · h={b.antenna_height_m}m ·
-                        {b.frequency_ghz}GHz · r={b.max_range_km}km
+                        {b.frequency_ghz}GHz · {b.tx_power_dbm}dBm · {b.antenna_gain_dbi}dBi · r={b.max_range_km}km
                         {b.azimuth_deg !== null && ` · az=${b.azimuth_deg}°`}
                       </div>
                       {b.notes && <div className="bts-item-notes">{b.notes}</div>}
@@ -417,7 +488,7 @@ export default function Admin() {
                 <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
                   <Popup>
                     <strong>{b.name}</strong><br />
-                    {b.frequency_ghz} GHz · h{b.antenna_height_m}m · r{b.max_range_km}km<br />
+                    {b.frequency_ghz} GHz · h{b.antenna_height_m}m · {b.antenna_gain_dbi}dBi · r{b.max_range_km}km<br />
                     {b.active ? 'Attiva' : 'Disattivata'}
                   </Popup>
                 </Marker>
@@ -427,6 +498,71 @@ export default function Admin() {
           </div>
         </div>
         </>
+        )}
+
+        {tab === 'tech' && (
+          <div className="admin-tech">
+            <div className="admin-section-head">
+              <div>
+                <h2 className="admin-h2">Verifica Tecnica Copertura</h2>
+                <p className="admin-sub">Calcolo link budget completo con parametri LTU Rocket + LTU LR</p>
+              </div>
+            </div>
+
+            <form className="cop-search" onSubmit={techGeocode}>
+              <div className="cop-search-input">
+                <Search size={18} />
+                <input
+                  type="text"
+                  value={techQuery}
+                  onChange={(e) => setTechQuery(e.target.value)}
+                  placeholder="Indirizzo o località"
+                  disabled={techSearching}
+                />
+              </div>
+              <label className="admin-tech-cah">
+                <span>Antenna cliente (m)</span>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  value={techCah}
+                  onChange={(e) => setTechCah(e.target.value)}
+                  style={{ width: '70px' }}
+                />
+              </label>
+              <button type="submit" className="btn btn-primary" disabled={techSearching || !techQuery.trim()}>
+                {techSearching ? <Loader2 size={18} className="spin" /> : <Search size={18} />}
+                Verifica
+              </button>
+            </form>
+
+            {techError && (
+              <div className="admin-error-banner">
+                <AlertCircle size={18} />
+                <span>{techError}</span>
+                <button onClick={() => setTechError(null)}><X size={16} /></button>
+              </div>
+            )}
+
+            {techChecking ? (
+              <div className="admin-empty"><Loader2 size={28} className="spin" /><p>Calcolo link budget in corso…</p></div>
+            ) : techResults && techResults.length > 0 ? (
+              <div className="admin-tech-results">
+                {techResults.map((r) => (
+                  <TechResultCard key={r.bts.id} result={r} />
+                ))}
+              </div>
+            ) : techPos ? (
+              <div className="admin-empty"><Radio size={28} /><p>Nessun risultato.</p></div>
+            ) : (
+              <div className="admin-empty">
+                <Gauge size={32} />
+                <p>Inserisci un indirizzo per il calcolo tecnico del link budget.</p>
+                <p className="admin-sub">Oppure clicca sulla mappa nella scheda BTS per prelevare coordinate.</p>
+              </div>
+            )}
+          </div>
         )}
 
         {tab === 'users' && (
@@ -558,6 +694,33 @@ export default function Admin() {
 
               <div className="form-row form-row-3">
                 <label className="form-field">
+                  <span>Guadagno antenna (dBi)</span>
+                  <input
+                    type="number" step="0.1" min="0"
+                    value={form.antenna_gain_dbi}
+                    onChange={(e) => setForm({ ...form, antenna_gain_dbi: e.target.value })}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Sensibilità RX (dBm)</span>
+                  <input
+                    type="number" step="0.1"
+                    value={form.rx_sensitivity_dbm}
+                    onChange={(e) => setForm({ ...form, rx_sensitivity_dbm: e.target.value })}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Perdite cavo (dB)</span>
+                  <input
+                    type="number" step="0.1" min="0"
+                    value={form.cable_loss_db}
+                    onChange={(e) => setForm({ ...form, cable_loss_db: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="form-row form-row-3">
+                <label className="form-field">
                   <span>Azimuth (°, vuoto=omni)</span>
                   <input
                     type="number" step="0.1" min="0" max="360"
@@ -645,6 +808,88 @@ export default function Admin() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function TechResultCard({ result: r }: { result: CoverageResult }) {
+  const lb = r.link_budget;
+  const rec = r.recommendation;
+  const qColor = r.link_quality === 'good' ? '#16a34a' : r.link_quality === 'marginal' ? '#e29743' : '#dc2626';
+
+  return (
+    <div className="admin-tech-card" style={{ borderLeftColor: qColor }}>
+      <div className="admin-tech-card-head">
+        <h3>{r.bts.name}</h3>
+        <span className={`cop-q-tag q-${r.link_quality}`}>{QUALITY_LABELS[r.link_quality]}</span>
+      </div>
+
+      <div className="admin-tech-grid">
+        <div className="admin-tech-section">
+          <h4>Parametri BTS</h4>
+          <dl>
+            <dt>Distanza</dt><dd>{r.distance_km} km</dd>
+            <dt>Entro raggio max</dt><dd>{r.within_max_range ? 'Sì' : 'No'} ({r.bts.max_range_km} km)</dd>
+            <dt>Settore antenna</dt><dd>{r.azimuth_ok ? 'OK' : 'Fuori settore'}</dd>
+            <dt>Frequenza</dt><dd>{r.bts.frequency_ghz} GHz</dd>
+            <dt>Altezza antenna</dt><dd>{r.bts.antenna_height_m} m</dd>
+            <dt>TX power</dt><dd>{r.bts.tx_power_dbm} dBm</dd>
+            <dt>Guadagno antenna</dt><dd>{r.bts.antenna_gain_dbi} dBi</dd>
+            <dt>Sensibilità RX</dt><dd>{r.bts.rx_sensitivity_dbm} dBm</dd>
+            <dt>Perdite cavo</dt><dd>{r.bts.cable_loss_db} dB</dd>
+          </dl>
+        </div>
+
+        {lb ? (
+          <div className="admin-tech-section">
+            <h4>Link Budget (downlink BTS→CPE)</h4>
+            <dl>
+              <dt>EIRP</dt><dd>{lb.eirp_dbm} dBm</dd>
+              <dt>FSPL</dt><dd>{lb.fspl_db} dB</dd>
+              <dt>Altre perdite</dt><dd>{lb.other_losses_db} dB</dd>
+              <dt>Potenza ricevuta</dt><dd>{lb.received_power_dbm} dBm</dd>
+              <dt>Fade margin</dt><dd style={{ color: lb.fade_margin_db >= 20 ? '#16a34a' : lb.fade_margin_db >= 10 ? '#e29743' : '#dc2626' }}>{lb.fade_margin_db} dB</dd>
+              <dt>MCS index</dt><dd>{lb.mcs_index}</dd>
+              <dt>Modulazione</dt><dd>{lb.modulation}</dd>
+              <dt>Throughput stimato (down)</dt><dd>{lb.estimated_throughput_mbps.down} Mbps</dd>
+              <dt>Throughput stimato (up)</dt><dd>{lb.estimated_throughput_mbps.up} Mbps</dd>
+            </dl>
+          </div>
+        ) : (
+          <div className="admin-tech-section">
+            <h4>Link Budget</h4>
+            <p style={{ color: '#94a3b8' }}>Non calcolabile — BTS fuori portata o ostruita</p>
+          </div>
+        )}
+
+        {lb && (
+          <div className="admin-tech-section">
+            <h4>Fresnel / LOS</h4>
+            <dl>
+              <dt>Path clear</dt><dd>{r.path_clear ? 'Sì' : 'No'}</dd>
+              <dt>Clearance Fresnel</dt><dd>{lb.fresnel_clearance_m ?? '—'} m</dd>
+              <dt>Peggior ostruzione</dt><dd>{lb.worst_obstruction_m !== null ? `${lb.worst_obstruction_m} m` : 'Nessuna'}</dd>
+            </dl>
+          </div>
+        )}
+
+        <div className="admin-tech-section">
+          <h4>Profilo consigliato (sito pubblico)</h4>
+          {rec.recommended_profile ? (
+            <div className="admin-tech-rec">
+              <Zap size={16} />
+              <div>
+                <strong>{rec.recommended_profile.label}</strong>
+                <span>{rec.recommended_profile.download_mbps}/{rec.recommended_profile.upload_mbps} Mbps</span>
+                <span>{rec.recommended_profile.price_bimonthly.toFixed(2)}€/mese (bim.) · {rec.recommended_profile.price_yearly.toFixed(2)}€/mese (ann.)</span>
+              </div>
+            </div>
+          ) : (
+            <p style={{ color: '#94a3b8' }}>{rec.reason}</p>
+          )}
+          <p className="admin-tech-rec-reason">{rec.reason}</p>
+        </div>
+      </div>
     </div>
   );
 }

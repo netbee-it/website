@@ -15,6 +15,34 @@ const PATH_SAMPLE_POINTS = 60;
 const FRESNEL_CLEARANCE_FACTOR = 0.6;
 const ELEVATION_API = "https://api.opentopodata.org/v1/srtm90m";
 
+const CLIENT = {
+  tx_power_dbm: 22,
+  antenna_gain_dbi: 26,
+  rx_sensitivity_dbm: -96,
+  cable_loss_db: 0.5,
+} as const;
+
+const SERVICE_PROFILES = [
+  { code: "NBEE50", label: "NBEE 50", download_mbps: 50, upload_mbps: 8, price_bimonthly: 28.00, price_yearly: 25.75, requires_coverage_check: false, category: "privati" },
+  { code: "NBEE100", label: "NBEE 100", download_mbps: 100, upload_mbps: 16, price_bimonthly: 34.00, price_yearly: 31.50, requires_coverage_check: false, category: "privati" },
+  { code: "NBEE200", label: "NBEE 200", download_mbps: 200, upload_mbps: 40, price_bimonthly: 42.00, price_yearly: 38.50, requires_coverage_check: true, category: "privati" },
+  { code: "NBEE100_PRO", label: "NBEE 100 Pro", download_mbps: 100, upload_mbps: 24, price_bimonthly: 32.00, price_yearly: 29.50, requires_coverage_check: false, category: "business" },
+  { code: "NBEE200_PRO", label: "NBEE 200 Pro", download_mbps: 200, upload_mbps: 50, price_bimonthly: 49.00, price_yearly: 38.50, requires_coverage_check: true, category: "business" },
+] as const;
+
+const MCS_TABLE: { threshold_db: number; modulation: string; efficiency: number }[] = [
+  { threshold_db: 3, modulation: "BPSK 1/2", efficiency: 0.5 },
+  { threshold_db: 6, modulation: "QPSK 1/2", efficiency: 1.0 },
+  { threshold_db: 9, modulation: "QPSK 3/4", efficiency: 1.5 },
+  { threshold_db: 12, modulation: "16QAM 1/2", efficiency: 2.0 },
+  { threshold_db: 15, modulation: "16QAM 3/4", efficiency: 3.0 },
+  { threshold_db: 18, modulation: "64QAM 2/3", efficiency: 4.0 },
+  { threshold_db: 21, modulation: "64QAM 3/4", efficiency: 4.5 },
+  { threshold_db: 24, modulation: "64QAM 5/6", efficiency: 5.0 },
+  { threshold_db: 27, modulation: "256QAM 3/4", efficiency: 6.0 },
+  { threshold_db: 30, modulation: "256QAM 5/6", efficiency: 6.67 },
+];
+
 interface Bts {
   id: string;
   name: string;
@@ -23,10 +51,14 @@ interface Bts {
   antenna_height_m: number;
   frequency_ghz: number;
   tx_power_dbm: number;
+  antenna_gain_dbi: number;
+  rx_sensitivity_dbm: number;
+  cable_loss_db: number;
   azimuth_deg: number | null;
   tilt_deg: number;
   max_range_km: number;
   active: boolean;
+  notes: string | null;
 }
 
 interface CoverageRequest {
@@ -35,49 +67,55 @@ interface CoverageRequest {
   customer_antenna_height_m?: number;
 }
 
+interface LinkBudgetDetails {
+  eirp_dbm: number;
+  fspl_db: number;
+  other_losses_db: number;
+  received_power_dbm: number;
+  fade_margin_db: number;
+  mcs_index: number;
+  modulation: string;
+  estimated_throughput_mbps: { down: number; up: number };
+  fresnel_clearance_m: number | null;
+  worst_obstruction_m: number | null;
+}
+
+interface ProfileRecommendation {
+  recommended_profile: typeof SERVICE_PROFILES[number] | null;
+  achievable_download_mbps: number;
+  achievable_upload_mbps: number;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+}
+
 interface CoverageResult {
   bts: Bts;
   distance_km: number;
   within_max_range: boolean;
   azimuth_ok: boolean;
   path_clear: boolean;
-  fresnel_clearance_m: number | null;
-  worst_obstruction_m: number | null;
-  estimated_rssi_dbm: number | null;
   link_quality: "good" | "marginal" | "blocked" | "out_of_range";
+  link_budget: LinkBudgetDetails | null;
+  recommendation: ProfileRecommendation;
   profile: { distance_m: number; terrain_m: number; los_m: number }[];
 }
 
-function haversineMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
 }
 
-function bearingDeg(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
+function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const toDeg = (r: number) => (r * 180) / Math.PI;
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δλ = toRad(lng2 - lng1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x =
-    Math.cos(φ1) * Math.sin(φ2) -
-    Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dLambda = toRad(lng2 - lng1);
+  const y = Math.sin(dLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
@@ -86,41 +124,23 @@ function angularDifferenceDeg(a: number, b: number): number {
   return diff > 180 ? 360 - diff : diff;
 }
 
-function destinationPoint(
-  lat: number,
-  lng: number,
-  bearingDeg: number,
-  distanceM: number,
-): { lat: number; lng: number } {
+function destinationPoint(lat: number, lng: number, bearing: number, distanceM: number): { lat: number; lng: number } {
   const toRad = (d: number) => (d * Math.PI) / 180;
   const toDeg = (r: number) => (r * 180) / Math.PI;
-  const δ = distanceM / EARTH_RADIUS_M;
-  const θ = toRad(bearingDeg);
-  const φ1 = toRad(lat);
-  const λ1 = toRad(lng);
-  const φ2 = Math.asin(
-    Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ),
-  );
-  const λ2 =
-    λ1 +
-    Math.atan2(
-      Math.sin(θ) * Math.sin(δ) * Math.cos(φ1),
-      Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2),
-    );
-  return { lat: toDeg(φ2), lng: ((toDeg(λ2) + 540) % 360) - 180 };
+  const delta = distanceM / EARTH_RADIUS_M;
+  const theta = toRad(bearing);
+  const phi1 = toRad(lat);
+  const lambda1 = toRad(lng);
+  const phi2 = Math.asin(Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta));
+  const lambda2 = lambda1 + Math.atan2(Math.sin(theta) * Math.sin(delta) * Math.cos(phi1), Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2));
+  return { lat: toDeg(phi2), lng: ((toDeg(lambda2) + 540) % 360) - 180 };
 }
 
-function fresnelRadiusM(
-  d1M: number,
-  d2M: number,
-  wavelengthM: number,
-): number {
+function fresnelRadiusM(d1M: number, d2M: number, wavelengthM: number): number {
   return Math.sqrt((wavelengthM * d1M * d2M) / (d1M + d2M));
 }
 
-async function fetchElevations(
-  points: { lat: number; lng: number }[],
-): Promise<number[]> {
+async function fetchElevations(points: { lat: number; lng: number }[]): Promise<number[]> {
   if (points.length === 0) return [];
   const locations = points.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join("|");
   const url = `${ELEVATION_API}?locations=${locations}`;
@@ -132,9 +152,7 @@ async function fetchElevations(
   if (!json.results || json.results.length !== points.length) {
     throw new Error("Elevation API returned mismatched results");
   }
-  return json.results.map((r: { elevation: number | null }) =>
-    r.elevation === null ? 0 : r.elevation,
-  );
+  return json.results.map((r: { elevation: number | null }) => (r.elevation === null ? 0 : r.elevation));
 }
 
 function computeProfile(
@@ -150,7 +168,6 @@ function computeProfile(
 } {
   const totalDistanceM = haversineMeters(bts.lat, bts.lng, target.lat, target.lng);
   const wavelengthM = SPEED_OF_LIGHT_M_S / (bts.frequency_ghz * 1e9);
-  const bearing = bearingDeg(bts.lat, bts.lng, target.lat, target.lng);
 
   const zBtsGround = elevations[0];
   const zCustomerGround = elevations[elevations.length - 1];
@@ -182,11 +199,7 @@ function computeProfile(
     }
     minClearance = Math.min(minClearance, clearance);
 
-    profile.push({
-      distance_m: d1,
-      terrain_m: terrain,
-      los_m: losHeight,
-    });
+    profile.push({ distance_m: d1, terrain_m: terrain, los_m: losHeight });
   }
 
   return {
@@ -197,28 +210,113 @@ function computeProfile(
   };
 }
 
-function estimateRssiDbm(
-  txPowerDbm: number,
+function computeLinkBudget(
+  bts: Bts,
   distanceKm: number,
-  frequencyGhz: number,
-): number {
+  pathClear: boolean,
+  fresnelClearanceM: number | null,
+  worstObstructionM: number | null,
+): LinkBudgetDetails {
   const distanceM = distanceKm * 1000;
-  const fsplDb = 20 * Math.log10(distanceM) + 20 * Math.log10(frequencyGhz * 1e9) - 147.55;
-  return txPowerDbm - fsplDb;
+  const freqHz = bts.frequency_ghz * 1e9;
+  const fsplDb = 20 * Math.log10(distanceM) + 20 * Math.log10(freqHz) - 147.55;
+
+  const eirpDbm = bts.tx_power_dbm + bts.antenna_gain_dbi - bts.cable_loss_db;
+
+  const otherLossesDb = Math.min(3, 0.5 * distanceKm);
+
+  const receivedPowerDbm = eirpDbm - fsplDb - otherLossesDb - CLIENT.cable_loss_db + CLIENT.antenna_gain_dbi;
+
+  const fadeMarginDb = receivedPowerDbm - CLIENT.rx_sensitivity_dbm;
+
+  let mcsIndex = 0;
+  for (let i = 0; i < MCS_TABLE.length; i++) {
+    if (fadeMarginDb >= MCS_TABLE[i].threshold_db) mcsIndex = i;
+  }
+  const modulation = MCS_TABLE[mcsIndex].modulation;
+  const efficiency = MCS_TABLE[mcsIndex].efficiency;
+
+  const rawCapacity = 200;
+  const down = Math.round(rawCapacity * (efficiency / 6.67) * 0.55);
+  const up = Math.round(down * 0.4);
+
+  return {
+    eirp_dbm: Number(eirpDbm.toFixed(1)),
+    fspl_db: Number(fsplDb.toFixed(1)),
+    other_losses_db: Number(otherLossesDb.toFixed(1)),
+    received_power_dbm: Number(receivedPowerDbm.toFixed(1)),
+    fade_margin_db: Number(fadeMarginDb.toFixed(1)),
+    mcs_index: mcsIndex,
+    modulation,
+    estimated_throughput_mbps: { down, up },
+    fresnel_clearance_m: fresnelClearanceM,
+    worst_obstruction_m: worstObstructionM,
+  };
 }
 
 function classifyQuality(
   withinMaxRange: boolean,
   azimuthOk: boolean,
   pathClear: boolean,
-  rssiDbm: number | null,
+  fadeMarginDb: number | null,
 ): CoverageResult["link_quality"] {
   if (!withinMaxRange) return "out_of_range";
   if (!azimuthOk || !pathClear) return "blocked";
-  if (rssiDbm === null) return "marginal";
-  if (rssiDbm >= -65) return "good";
-  if (rssiDbm >= -75) return "marginal";
-  return "marginal";
+  if (fadeMarginDb === null) return "marginal";
+  if (fadeMarginDb >= 20) return "good";
+  if (fadeMarginDb >= 10) return "marginal";
+  return "blocked";
+}
+
+function recommendProfile(
+  linkQuality: CoverageResult["link_quality"],
+  throughputDown: number,
+  throughputUp: number,
+): ProfileRecommendation {
+  const deratedDown = throughputDown * 0.8;
+  const deratedUp = throughputUp * 0.8;
+
+  if (linkQuality === "blocked" || linkQuality === "out_of_range") {
+    return {
+      recommended_profile: null,
+      achievable_download_mbps: throughputDown,
+      achievable_upload_mbps: throughputUp,
+      confidence: "low",
+      reason: "Nessuna copertura disponibile in questa posizione.",
+    };
+  }
+
+  const confidence = linkQuality === "good" ? "high" : "medium";
+
+  let best: typeof SERVICE_PROFILES[number] | null = null;
+  for (const p of SERVICE_PROFILES) {
+    if (p.category !== "privati") continue;
+    if (deratedDown >= p.download_mbps && deratedUp >= p.upload_mbps) {
+      best = p;
+    }
+  }
+
+  if (!best) {
+    return {
+      recommended_profile: null,
+      achievable_download_mbps: throughputDown,
+      achievable_upload_mbps: throughputUp,
+      confidence,
+      reason: "Segnale insufficiente per i profili disponibili. Richiede sopralluogo tecnico.",
+    };
+  }
+
+  const reason = linkQuality === "good"
+    ? `Copertura ottima — profilo consigliato: ${best.label} (${best.download_mbps}/${best.upload_mbps} Mbps).`
+    : `Copertura marginale — profillo consigliato: ${best.label}. Richiede sopralluogo di conferma.`;
+
+  return {
+    recommended_profile: best,
+    achievable_download_mbps: throughputDown,
+    achievable_upload_mbps: throughputUp,
+    confidence,
+    reason,
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -239,11 +337,7 @@ Deno.serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      body = {
-        lat,
-        lng,
-        customer_antenna_height_m: cah ? parseFloat(cah) : undefined,
-      };
+      body = { lat, lng, customer_antenna_height_m: cah ? parseFloat(cah) : undefined };
     } else if (req.method === "POST") {
       body = await req.json();
     } else {
@@ -253,8 +347,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const customerAntennaM =
-      body.customer_antenna_height_m ?? DEFAULT_CUSTOMER_ANTENNA_HEIGHT_M;
+    const customerAntennaM = body.customer_antenna_height_m ?? DEFAULT_CUSTOMER_ANTENNA_HEIGHT_M;
     if (
       typeof body.lat !== "number" ||
       typeof body.lng !== "number" ||
@@ -282,42 +375,30 @@ Deno.serve(async (req: Request) => {
     if (btsError) throw new Error(`DB error: ${btsError.message}`);
     if (!btsList || btsList.length === 0) {
       return new Response(
-        JSON.stringify({ results: [], message: "Nessuna BTS attiva configurata" }),
+        JSON.stringify({ results: [], customer: { lat: body.lat, lng: body.lng }, message: "Nessuna BTS attiva configurata" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     const results: CoverageResult[] = [];
     for (const bts of btsList as Bts[]) {
-      const distanceKm =
-        haversineMeters(bts.lat, bts.lng, body.lat, body.lng) / 1000;
+      const distanceKm = haversineMeters(bts.lat, bts.lng, body.lat, body.lng) / 1000;
       const withinMaxRange = distanceKm <= bts.max_range_km;
 
       const pathBearing = bearingDeg(bts.lat, bts.lng, body.lat, body.lng);
-      const azimuthOk =
-        bts.azimuth_deg === null ||
-        angularDifferenceDeg(pathBearing, bts.azimuth_deg) <= 60;
+      const azimuthOk = bts.azimuth_deg === null || angularDifferenceDeg(pathBearing, bts.azimuth_deg) <= 60;
 
       if (!withinMaxRange || !azimuthOk) {
+        const lb = computeLinkBudget(bts, distanceKm, false, null, null);
         results.push({
           bts,
           distance_km: Number(distanceKm.toFixed(2)),
           within_max_range: withinMaxRange,
           azimuth_ok: azimuthOk,
           path_clear: false,
-          fresnel_clearance_m: null,
-          worst_obstruction_m: null,
-          estimated_rssi_dbm: withinMaxRange
-            ? Number(estimateRssiDbm(bts.tx_power_dbm, distanceKm, bts.frequency_ghz).toFixed(1))
-            : null,
-          link_quality: classifyQuality(
-            withinMaxRange,
-            azimuthOk,
-            false,
-            withinMaxRange
-              ? estimateRssiDbm(bts.tx_power_dbm, distanceKm, bts.frequency_ghz)
-              : null,
-          ),
+          link_quality: classifyQuality(withinMaxRange, azimuthOk, false, null),
+          link_budget: lb,
+          recommendation: recommendProfile("out_of_range", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
           profile: [],
         });
         continue;
@@ -327,24 +408,23 @@ Deno.serve(async (req: Request) => {
       for (let i = 0; i < PATH_SAMPLE_POINTS; i++) {
         const t = i / (PATH_SAMPLE_POINTS - 1);
         const distM = t * distanceKm * 1000;
-        const p = destinationPoint(bts.lat, bts.lng, pathBearing, distM);
-        points.push(p);
+        points.push(destinationPoint(bts.lat, bts.lng, pathBearing, distM));
       }
 
       let elevations: number[];
       try {
         elevations = await fetchElevations(points);
       } catch (err) {
+        const lb = computeLinkBudget(bts, distanceKm, false, null, null);
         results.push({
           bts,
           distance_km: Number(distanceKm.toFixed(2)),
           within_max_range: withinMaxRange,
           azimuth_ok: azimuthOk,
           path_clear: false,
-          fresnel_clearance_m: null,
-          worst_obstruction_m: null,
-          estimated_rssi_dbm: null,
           link_quality: "blocked",
+          link_budget: lb,
+          recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
           profile: [],
         });
         console.error(`Elevation fetch failed for BTS ${bts.id}:`, err.message);
@@ -352,7 +432,14 @@ Deno.serve(async (req: Request) => {
       }
 
       const analysis = computeProfile(bts, body, customerAntennaM, elevations);
-      const rssi = estimateRssiDbm(bts.tx_power_dbm, distanceKm, bts.frequency_ghz);
+      const lb = computeLinkBudget(
+        bts,
+        distanceKm,
+        analysis.pathClear,
+        Number(analysis.fresnelClearanceM.toFixed(1)),
+        analysis.worstObstructionM > 0 ? Number(analysis.worstObstructionM.toFixed(1)) : null,
+      );
+      const quality = classifyQuality(withinMaxRange, azimuthOk, analysis.pathClear, lb.fade_margin_db);
 
       results.push({
         bts,
@@ -360,12 +447,9 @@ Deno.serve(async (req: Request) => {
         within_max_range: withinMaxRange,
         azimuth_ok: azimuthOk,
         path_clear: analysis.pathClear,
-        fresnel_clearance_m: Number(analysis.fresnelClearanceM.toFixed(1)),
-        worst_obstruction_m: analysis.worstObstructionM > 0
-          ? Number(analysis.worstObstructionM.toFixed(1))
-          : null,
-        estimated_rssi_dbm: Number(rssi.toFixed(1)),
-        link_quality: classifyQuality(withinMaxRange, azimuthOk, analysis.pathClear, rssi),
+        link_quality: quality,
+        link_budget: lb,
+        recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up),
         profile: analysis.profile,
       });
     }
