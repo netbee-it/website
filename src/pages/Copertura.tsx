@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, FormEvent, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Circle, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle, Signal, MapPin, Zap, TrendingUp } from 'lucide-react';
@@ -216,10 +216,6 @@ export default function Copertura() {
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
                 attribution='Esri, HERE, Garmin'
               />
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-                attribution='Esri, HERE, Garmin, OpenStreetMap'
-              />
               <ClickHandler onClick={handleMapClick} />
               <Geolocate />
               <FlyTo center={flyTarget} />
@@ -234,14 +230,6 @@ export default function Copertura() {
                   </Marker>
                 );
               })}
-              {btsList.map((b) => (
-                <Circle
-                  key={`c-${b.id}`}
-                  center={[b.lat, b.lng]}
-                  radius={b.max_range_km * 1000}
-                  pathOptions={{ color: '#1752c7', weight: 1, opacity: 0.4, fillOpacity: 0.05 }}
-                />
-              ))}
               {customerPos && (
                 <Marker position={[customerPos.lat, customerPos.lng]} icon={customerIcon()}>
                 </Marker>

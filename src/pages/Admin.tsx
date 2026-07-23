@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMapEvents, useMap } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
   ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap, Tag,
+  Satellite, Map as MapIcon,
 } from 'lucide-react';
 import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +18,8 @@ const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Worl
 const SATELLITE_ATTR = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics';
 const LABELS_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 const LABELS_ATTR = 'Esri, HERE, Garmin';
+const STREET_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const STREET_ATTR = '&copy; OpenStreetMap &copy; CARTO';
 
 interface AdminUser {
   id: string;
@@ -224,6 +227,7 @@ export default function Admin() {
   const [techChecking, setTechChecking] = useState(false);
   const [techError, setTechError] = useState<string | null>(null);
   const [techCah, setTechCah] = useState('5');
+  const [mapType, setMapType] = useState<'satellite' | 'street'>('satellite');
 
   // Profiles state
   const [profileList, setProfileList] = useState<ServiceProfile[]>([]);
@@ -655,14 +659,31 @@ export default function Admin() {
 
               <div className="admin-map">
                 <MapContainer center={DEFAULT_CENTER} zoom={13} className="admin-map-container">
-                  <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
-                  <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
-                  <TileLayer
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-                    attribution='Esri, HERE, Garmin, OpenStreetMap'
-                  />
+                  {mapType === 'satellite' ? (
+                    <>
+                      <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
+                      <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                    </>
+                  ) : (
+                    <TileLayer url={STREET_URL} attribution={STREET_ATTR} />
+                  )}
+                  <button
+                    className="map-type-toggle"
+                    onClick={() => setMapType(mapType === 'satellite' ? 'street' : 'satellite')}
+                    title={mapType === 'satellite' ? 'Passa a mappa stradale' : 'Passa a satellite'}
+                  >
+                    {mapType === 'satellite' ? <MapIcon size={18} /> : <Satellite size={18} />}
+                  </button>
                   <ClickHandler onClick={pickOnMap} />
                   <Geolocate />
+                  {btsList.map((b) => (
+                    <Circle
+                      key={`c-${b.id}`}
+                      center={[b.lat, b.lng]}
+                      radius={b.max_range_km * 1000}
+                      pathOptions={{ color: '#1752c7', weight: 1, opacity: 0.5, fillOpacity: 0.08 }}
+                    />
+                  ))}
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
                       <Popup>
@@ -746,14 +767,31 @@ export default function Admin() {
 
               <div className="admin-tech-right">
                 <MapContainer center={DEFAULT_CENTER} zoom={13} className="admin-map-container">
-                  <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
-                  <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
-                  <TileLayer
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-                    attribution='Esri, HERE, Garmin, OpenStreetMap'
-                  />
+                  {mapType === 'satellite' ? (
+                    <>
+                      <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
+                      <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                    </>
+                  ) : (
+                    <TileLayer url={STREET_URL} attribution={STREET_ATTR} />
+                  )}
+                  <button
+                    className="map-type-toggle"
+                    onClick={() => setMapType(mapType === 'satellite' ? 'street' : 'satellite')}
+                    title={mapType === 'satellite' ? 'Passa a mappa stradale' : 'Passa a satellite'}
+                  >
+                    {mapType === 'satellite' ? <MapIcon size={18} /> : <Satellite size={18} />}
+                  </button>
                   <ClickHandler onClick={handleTechMapClick} />
                   <Geolocate />
+                  {btsList.map((b) => (
+                    <Circle
+                      key={`c-${b.id}`}
+                      center={[b.lat, b.lng]}
+                      radius={b.max_range_km * 1000}
+                      pathOptions={{ color: '#1752c7', weight: 1, opacity: 0.5, fillOpacity: 0.08 }}
+                    />
+                  ))}
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
                       <Popup>

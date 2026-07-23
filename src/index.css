@@ -1587,6 +1587,28 @@ body {
 .admin-map-container {
   height: 480px;
   width: 100%;
+  position: relative;
+}
+.map-type-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  background: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  color: var(--dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), transform var(--transition);
+}
+.map-type-toggle:hover {
+  background: var(--bg-alt);
+  transform: scale(1.05);
 }
 .admin-map-hint {
   padding: 10px 16px;
