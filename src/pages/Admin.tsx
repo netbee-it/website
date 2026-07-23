@@ -15,8 +15,8 @@ const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
 
 const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_ATTR = 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics';
-const LABELS_URL = 'https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png';
-const LABELS_ATTR = '&copy; Stamen Design';
+const LABELS_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const LABELS_ATTR = 'Esri, HERE, Garmin';
 
 interface AdminUser {
   id: string;
@@ -642,6 +642,10 @@ export default function Admin() {
                 <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
                   <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
                   <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                  <TileLayer
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+                    attribution='Esri, HERE, Garmin, OpenStreetMap'
+                  />
                   <ClickHandler onClick={pickOnMap} />
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>
@@ -728,6 +732,10 @@ export default function Admin() {
                 <MapContainer center={DEFAULT_CENTER} zoom={9} className="admin-map-container">
                   <TileLayer url={SATELLITE_URL} attribution={SATELLITE_ATTR} />
                   <TileLayer url={LABELS_URL} attribution={LABELS_ATTR} />
+                  <TileLayer
+                    url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+                    attribution='Esri, HERE, Garmin, OpenStreetMap'
+                  />
                   <ClickHandler onClick={handleTechMapClick} />
                   {btsList.map((b) => (
                     <Marker key={b.id} position={[b.lat, b.lng]} icon={btsIcon(b.active)}>

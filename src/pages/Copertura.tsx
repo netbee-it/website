@@ -198,8 +198,12 @@ export default function Copertura() {
                 attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
               />
               <TileLayer
-                url="https://stamen-tiles.a.ssl.fastly.net/toner-labels/{z}/{x}/{y}.png"
-                attribution='&copy; Stamen Design'
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+                attribution='Esri, HERE, Garmin'
+              />
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+                attribution='Esri, HERE, Garmin, OpenStreetMap'
               />
               <ClickHandler onClick={handleMapClick} />
               <FlyTo center={flyTarget} />
