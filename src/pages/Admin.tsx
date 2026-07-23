@@ -6,7 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
   ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap, Tag,
-  Satellite, Map as MapIcon,
+  Satellite, Map as MapIcon, Signal,
 } from 'lucide-react';
 import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, ProfileRecommendationRule, ProfileRecommendationRuleInput, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
