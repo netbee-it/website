@@ -62,6 +62,19 @@ export interface ServiceProfile {
 
 export type ServiceProfileInput = Omit<ServiceProfile, 'id' | 'created_at' | 'updated_at'>;
 
+export interface ProfileRecommendationRule {
+  id: string;
+  min_dbm: number;
+  profile_id: string;
+  label: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProfileRecommendationRuleInput = Omit<ProfileRecommendationRule, 'id' | 'created_at' | 'updated_at'>;
+
 export interface LinkBudgetDetails {
   eirp_dbm: number;
   fspl_db: number;

@@ -275,15 +275,23 @@ function classifyQuality(
   return "blocked";
 }
 
+interface ProfileRecommendationRule {
+  id: string;
+  min_dbm: number;
+  profile_id: string;
+  label: string;
+  sort_order: number;
+  active: boolean;
+}
+
 function recommendProfile(
   linkQuality: CoverageResult["link_quality"],
   throughputDown: number,
   throughputUp: number,
   profiles: ServiceProfile[],
+  receivedPowerDbm: number | null,
+  rules: ProfileRecommendationRule[],
 ): ProfileRecommendation {
-  const deratedDown = throughputDown * 0.8;
-  const deratedUp = throughputUp * 0.8;
-
   if (linkQuality === "blocked" || linkQuality === "out_of_range") {
     return {
       recommended_profile: null,
@@ -295,6 +303,35 @@ function recommendProfile(
   }
 
   const confidence = linkQuality === "good" ? "high" : "medium";
+
+  // Try rules first: pick the highest-threshold rule whose min_dbm <= received power
+  if (receivedPowerDbm !== null && rules.length > 0) {
+    const activeRules = rules
+      .filter((r) => r.active)
+      .sort((a, b) => b.min_dbm - a.min_dbm);
+
+    for (const rule of activeRules) {
+      if (receivedPowerDbm >= rule.min_dbm) {
+        const profile = profiles.find((p) => p.id === rule.profile_id);
+        if (profile && profile.active) {
+          const reason = linkQuality === "good"
+            ? `${rule.label} — profilo consigliato: ${profile.label} (${profile.download_mbps}/${profile.upload_mbps} Mbps).`
+            : `${rule.label} — profilo consigliato: ${profile.label}. Richiede sopralluogo di conferma.`;
+          return {
+            recommended_profile: profile,
+            achievable_download_mbps: throughputDown,
+            achievable_upload_mbps: throughputUp,
+            confidence,
+            reason,
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback: old throughput-based logic
+  const deratedDown = throughputDown * 0.8;
+  const deratedUp = throughputUp * 0.8;
 
   const eligible = profiles
     .filter((p) => p.active && p.category === "privati")
@@ -394,6 +431,15 @@ Deno.serve(async (req: Request) => {
 
     const profiles: ServiceProfile[] = (profileList ?? []) as ServiceProfile[];
 
+    const { data: ruleList, error: ruleError } = await supabase
+      .from("profile_recommendation_rules")
+      .select("*")
+      .eq("active", true)
+      .order("min_dbm", { ascending: false });
+
+    if (ruleError) throw new Error(`DB error: ${ruleError.message}`);
+    const rules: ProfileRecommendationRule[] = (ruleList ?? []) as ProfileRecommendationRule[];
+
     if (!btsList || btsList.length === 0) {
       return new Response(
         JSON.stringify({ results: [], customer: { lat: body.lat, lng: body.lng }, message: "Nessuna BTS attiva configurata" }),
@@ -419,7 +465,7 @@ Deno.serve(async (req: Request) => {
           path_clear: false,
           link_quality: classifyQuality(withinMaxRange, azimuthOk, false, null),
           link_budget: lb,
-          recommendation: recommendProfile("out_of_range", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
+          recommendation: recommendProfile("out_of_range", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles, lb.received_power_dbm, rules),
           profile: [],
         });
         continue;
@@ -445,7 +491,7 @@ Deno.serve(async (req: Request) => {
           path_clear: false,
           link_quality: "blocked",
           link_budget: lb,
-          recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
+          recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles, lb.received_power_dbm, rules),
           profile: [],
         });
         console.error(`Elevation fetch failed for BTS ${bts.id}:`, err.message);
@@ -470,7 +516,7 @@ Deno.serve(async (req: Request) => {
         path_clear: analysis.pathClear,
         link_quality: quality,
         link_budget: lb,
-        recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles),
+        recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles, lb.received_power_dbm, rules),
         profile: analysis.profile,
       });
     }

@@ -8,7 +8,7 @@ import {
   ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap, Tag,
   Satellite, Map as MapIcon,
 } from 'lucide-react';
-import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, checkCoverage } from '../lib/supabase';
+import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, ProfileRecommendationRule, ProfileRecommendationRuleInput, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
@@ -238,6 +238,15 @@ export default function Admin() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
+  // Recommendation rules state
+  const [ruleList, setRuleList] = useState<ProfileRecommendationRule[]>([]);
+  const [loadingRules, setLoadingRules] = useState(false);
+  const [editingRule, setEditingRule] = useState<ProfileRecommendationRule | null>(null);
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [ruleForm, setRuleForm] = useState({ min_dbm: '-65', profile_id: '', label: '', sort_order: '1', active: true });
+  const [savingRule, setSavingRule] = useState(false);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+
   const loadBts = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -262,6 +271,18 @@ export default function Admin() {
     setLoadingProfiles(false);
   }, []);
 
+  const loadRules = useCallback(async () => {
+    setLoadingRules(true);
+    setError(null);
+    const { data, error } = await supabase.from('profile_recommendation_rules').select('*').order('min_dbm', { ascending: false });
+    if (error) {
+      setError(error.message);
+    } else {
+      setRuleList((data ?? []) as ProfileRecommendationRule[]);
+    }
+    setLoadingRules(false);
+  }, []);
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate('/login', { state: { from: '/admin' }, replace: true });
@@ -273,8 +294,11 @@ export default function Admin() {
   }, [user, loadBts]);
 
   useEffect(() => {
-    if (user && tab === 'profiles') loadProfiles();
-  }, [user, tab, loadProfiles]);
+    if (user && tab === 'profiles') {
+      loadProfiles();
+      loadRules();
+    }
+  }, [user, tab, loadProfiles, loadRules]);
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
@@ -517,6 +541,65 @@ export default function Admin() {
     if (error) setError(error.message);
     else await loadProfiles();
     setDeletingProfileId(null);
+  };
+
+  // Recommendation rules CRUD
+  const openNewRule = () => {
+    setEditingRule(null);
+    setRuleForm({ min_dbm: '-65', profile_id: profileList[0]?.id ?? '', label: '', sort_order: String(ruleList.length + 1), active: true });
+    setShowRuleForm(true);
+  };
+
+  const openEditRule = (r: ProfileRecommendationRule) => {
+    setEditingRule(r);
+    setRuleForm({ min_dbm: String(r.min_dbm), profile_id: r.profile_id, label: r.label, sort_order: String(r.sort_order), active: r.active });
+    setShowRuleForm(true);
+  };
+
+  const closeRuleForm = () => {
+    setShowRuleForm(false);
+    setEditingRule(null);
+  };
+
+  const handleRuleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSavingRule(true);
+    setError(null);
+    const input: ProfileRecommendationRuleInput = {
+      min_dbm: parseFloat(ruleForm.min_dbm),
+      profile_id: ruleForm.profile_id,
+      label: ruleForm.label.trim(),
+      sort_order: parseInt(ruleForm.sort_order, 10) || 0,
+      active: ruleForm.active,
+    };
+    if (!input.profile_id) {
+      setError('Seleziona un profilo.');
+      setSavingRule(false);
+      return;
+    }
+    let err;
+    if (editingRule) {
+      ({ error: err } = await supabase.from('profile_recommendation_rules').update(input).eq('id', editingRule.id));
+    } else {
+      ({ error: err } = await supabase.from('profile_recommendation_rules').insert(input));
+    }
+    if (err) {
+      setError(err.message);
+      setSavingRule(false);
+      return;
+    }
+    setSavingRule(false);
+    closeRuleForm();
+    await loadRules();
+  };
+
+  const handleDeleteRule = async (r: ProfileRecommendationRule) => {
+    if (!confirm(`Eliminare la regola "${r.label}"?`)) return;
+    setDeletingRuleId(r.id);
+    const { error } = await supabase.from('profile_recommendation_rules').delete().eq('id', r.id);
+    if (error) setError(error.message);
+    else await loadRules();
+    setDeletingRuleId(null);
   };
 
   if (authLoading) {
@@ -818,6 +901,7 @@ export default function Admin() {
         )}
 
         {tab === 'profiles' && (
+          <>
           <div className="admin-users">
             <div className="admin-section-head">
               <div>
@@ -875,6 +959,65 @@ export default function Admin() {
               </ul>
             )}
           </div>
+
+          {/* Recommendation Rules */}
+          <div className="admin-rules-section">
+            <div className="admin-section-head">
+              <div>
+                <h3 className="admin-h3">Regole profilo consigliato</h3>
+                <p className="admin-sub">
+                  Associa la potenza del segnale ricevuto (dBm) al profilo da consigliare. Le regole sono valutate dalla più restrittiva alla meno restrittiva.
+                </p>
+              </div>
+              <button className="btn btn-primary" onClick={openNewRule} disabled={profileList.length === 0}>
+                <Plus size={18} /> Aggiungi regola
+              </button>
+            </div>
+
+            {loadingRules ? (
+              <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
+            ) : ruleList.length === 0 ? (
+              <div className="admin-empty">
+                <Signal size={32} />
+                <p>Nessuna regola configurata. Il sistema userà il calcolo automatico basato su throughput.</p>
+              </div>
+            ) : (
+              <ul className="bts-list">
+                {ruleList.map((r) => {
+                  const profile = profileList.find((p) => p.id === r.profile_id);
+                  return (
+                    <li key={r.id} className={`bts-item${r.active ? '' : ' inactive'}`}>
+                      <div className="bts-item-status">
+                        <span className={`bts-status-dot ${r.active ? 'on' : 'off'}`} />
+                      </div>
+                      <div className="bts-item-main">
+                        <div className="bts-item-name">
+                          ≥ {r.min_dbm} dBm {r.label && <span className="profile-code-badge">{r.label}</span>}
+                        </div>
+                        <div className="bts-item-meta">
+                          Profilo: {profile ? `${profile.label} (${profile.download_mbps}/${profile.upload_mbps} Mbps)` : 'Profilo eliminato'}
+                        </div>
+                      </div>
+                      <div className="bts-item-actions">
+                        <button onClick={() => openEditRule(r)} className="icon-btn" title="Modifica">
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRule(r)}
+                          className="icon-btn danger"
+                          title="Elimina"
+                          disabled={deletingRuleId === r.id}
+                        >
+                          {deletingRuleId === r.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          </>
         )}
 
         {tab === 'users' && (
@@ -1200,6 +1343,79 @@ export default function Admin() {
                 <button type="submit" className="btn btn-primary" disabled={savingProfile}>
                   {savingProfile ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
                   {editingProfile ? 'Salva modifiche' : 'Crea profilo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showRuleForm && (
+        <div className="modal-backdrop" onClick={closeRuleForm}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{editingRule ? 'Modifica regola' : 'Nuova regola'}</h2>
+              <button onClick={closeRuleForm} className="icon-btn"><X size={18} /></button>
+            </div>
+            <form className="bts-form" onSubmit={handleRuleSubmit}>
+              <label className="form-field">
+                <span>Potenza minima ricevuta (dBm) *</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={ruleForm.min_dbm}
+                  onChange={(e) => setRuleForm({ ...ruleForm, min_dbm: e.target.value })}
+                  required
+                  placeholder="-55"
+                />
+                <small className="form-hint">Es. -55 = segnale forte, -75 = segnale debole</small>
+              </label>
+              <label className="form-field">
+                <span>Profilo consigliato *</span>
+                <select
+                  value={ruleForm.profile_id}
+                  onChange={(e) => setRuleForm({ ...ruleForm, profile_id: e.target.value })}
+                  required
+                >
+                  <option value="">— Seleziona —</option>
+                  {profileList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label} ({p.download_mbps}/{p.upload_mbps} Mbps)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="form-field">
+                <span>Etichetta (descrizione)</span>
+                <input
+                  value={ruleForm.label}
+                  onChange={(e) => setRuleForm({ ...ruleForm, label: e.target.value })}
+                  placeholder="Segnale ottimo"
+                />
+              </label>
+              <div className="form-row form-row-2">
+                <label className="form-field">
+                  <span>Ordine</span>
+                  <input
+                    type="number" min="0"
+                    value={ruleForm.sort_order}
+                    onChange={(e) => setRuleForm({ ...ruleForm, sort_order: e.target.value })}
+                  />
+                </label>
+                <label className="form-field form-check">
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.active}
+                    onChange={(e) => setRuleForm({ ...ruleForm, active: e.target.checked })}
+                  />
+                  <span>Attiva</span>
+                </label>
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn btn-outline" onClick={closeRuleForm}>Annulla</button>
+                <button type="submit" className="btn btn-primary" disabled={savingRule}>
+                  {savingRule ? <Loader2 size={18} className="spin" /> : <Save size={18} />}
+                  {editingRule ? 'Salva modifiche' : 'Crea regola'}
                 </button>
               </div>
             </form>

@@ -2203,6 +2203,20 @@ body {
 }
 .form-check-group .form-check { margin: 0; }
 
+/* ─── Recommendation Rules ─── */
+.admin-rules-section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.admin-rules-section .admin-section-head { margin-bottom: 16px; }
+.form-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
 /* ─── Responsive Admin/Copertura ─── */
 @media (max-width: 900px) {
   .admin-layout { grid-template-columns: 1fr; }
