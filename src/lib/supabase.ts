@@ -114,6 +114,31 @@ export interface CoverageResponse {
   message?: string;
 }
 
+export interface KoReportEntry {
+  bts_id: string;
+  bts_name: string;
+  distance_km: number;
+  within_max_range: boolean;
+  azimuth_ok: boolean;
+  path_clear: boolean;
+  link_quality: string;
+  reason: string;
+}
+
+export interface CoverageRequest {
+  id: string;
+  customer_lat: number;
+  customer_lng: number;
+  address: string | null;
+  status: 'ko' | 'improvement_request';
+  ko_report: KoReportEntry[] | null;
+  customer_name: string | null;
+  customer_email: string | null;
+  customer_phone: string | null;
+  message: string | null;
+  created_at: string;
+}
+
 export async function checkCoverage(
   lat: number,
   lng: number,

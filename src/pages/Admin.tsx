@@ -6,9 +6,9 @@ import 'leaflet/dist/leaflet.css';
 import {
   Plus, Pencil, Trash2, X, Save, Loader2, Radio, LogOut, MapPin,
   ArrowLeft, AlertCircle, Users, UserPlus, Shield, Search, Gauge, Zap, Tag,
-  Satellite, Map as MapIcon, Signal,
+  Satellite, Map as MapIcon, Signal, FileText, Mail, Phone, Clock, Filter, User,
 } from 'lucide-react';
-import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, ProfileRecommendationRule, ProfileRecommendationRuleInput, checkCoverage } from '../lib/supabase';
+import { supabase, Bts, BtsInput, CoverageResult, ServiceProfile, ServiceProfileInput, ProfileRecommendationRule, ProfileRecommendationRuleInput, CoverageRequest, checkCoverage } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import NetBeeLogo from '../components/NetBeeLogo';
 
@@ -210,7 +210,7 @@ export default function Admin() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [tab, setTab] = useState<'bts' | 'tech' | 'profiles' | 'users'>('bts');
+  const [tab, setTab] = useState<'bts' | 'tech' | 'profiles' | 'users' | 'reports'>('bts');
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [showUserForm, setShowUserForm] = useState(false);
@@ -246,6 +246,12 @@ export default function Admin() {
   const [ruleForm, setRuleForm] = useState({ min_dbm: '-65', profile_id: '', label: '', sort_order: '1', active: true });
   const [savingRule, setSavingRule] = useState(false);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+
+  // Coverage reports state
+  const [reportList, setReportList] = useState<CoverageRequest[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [reportFilter, setReportFilter] = useState<'all' | 'ko' | 'improvement_request'>('all');
+  const [selectedReport, setSelectedReport] = useState<CoverageRequest | null>(null);
 
   const loadBts = useCallback(async () => {
     setLoading(true);
@@ -324,9 +330,28 @@ export default function Admin() {
     }
   }, [session]);
 
+  const loadReports = useCallback(async () => {
+    setLoadingReports(true);
+    setError(null);
+    const { data, error } = await supabase
+      .from('coverage_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      setError(error.message);
+    } else {
+      setReportList((data ?? []) as CoverageRequest[]);
+    }
+    setLoadingReports(false);
+  }, []);
+
   useEffect(() => {
     if (user && tab === 'users') loadUsers();
   }, [user, tab, loadUsers]);
+
+  useEffect(() => {
+    if (user && tab === 'reports') loadReports();
+  }, [user, tab, loadReports]);
 
   const handleCreateUser = async (e: FormEvent) => {
     e.preventDefault();
@@ -667,6 +692,12 @@ export default function Admin() {
               onClick={() => setTab('users')}
             >
               <Users size={15} /> Amministratori
+            </button>
+            <button
+              className={`admin-tab${tab === 'reports' ? ' active' : ''}`}
+              onClick={() => setTab('reports')}
+            >
+              <FileText size={15} /> Report Copertura
             </button>
           </div>
         </div>
@@ -1065,6 +1096,187 @@ export default function Admin() {
                 ))}
               </ul>
             )}
+          </div>
+        )}
+
+        {tab === 'reports' && (
+          <div className="admin-reports">
+            <div className="admin-section-head">
+              <div>
+                <h2 className="admin-h2">Report Copertura</h2>
+                <p className="admin-sub">
+                  {reportList.length} richieste · {reportList.filter(r => r.status === 'ko').length} KO · {reportList.filter(r => r.status === 'improvement_request').length} richieste miglioramento
+                </p>
+              </div>
+              <div className="admin-report-filters">
+                <Filter size={15} />
+                <button
+                  className={`admin-chip${reportFilter === 'all' ? ' active' : ''}`}
+                  onClick={() => setReportFilter('all')}
+                >Tutti</button>
+                <button
+                  className={`admin-chip${reportFilter === 'ko' ? ' active' : ''}`}
+                  onClick={() => setReportFilter('ko')}
+                >KO</button>
+                <button
+                  className={`admin-chip${reportFilter === 'improvement_request' ? ' active' : ''}`}
+                  onClick={() => setReportFilter('improvement_request')}
+                >Miglioramento</button>
+              </div>
+            </div>
+
+            {loadingReports ? (
+              <div className="admin-empty"><Loader2 size={24} className="spin" /></div>
+            ) : reportList.length === 0 ? (
+              <div className="admin-empty"><FileText size={32} /><p>Nessun report disponibile.</p></div>
+            ) : (
+              <div className="admin-report-table-wrap">
+                <table className="admin-report-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Tipo</th>
+                      <th>Posizione</th>
+                      <th>Dettagli</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportList
+                      .filter(r => reportFilter === 'all' || r.status === reportFilter)
+                      .map(r => (
+                      <tr key={r.id} onClick={() => setSelectedReport(r)} className="admin-report-row">
+                        <td className="admin-report-date">
+                          {new Date(r.created_at).toLocaleDateString('it-IT')}
+                          <span>{new Date(r.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </td>
+                        <td>
+                          <span className={`admin-report-badge admin-report-badge-${r.status}`}>
+                            {r.status === 'ko' ? 'KO' : 'Miglioramento'}
+                          </span>
+                        </td>
+                        <td className="admin-report-loc">
+                          {r.address ? (
+                            <span>{r.address}</span>
+                          ) : (
+                            <span className="admin-report-coords">{r.customer_lat.toFixed(4)}, {r.customer_lng.toFixed(4)}</span>
+                          )}
+                        </td>
+                        <td className="admin-report-detail-cell">
+                          {r.status === 'ko' && r.ko_report ? (
+                            <span>{r.ko_report.length} BTS analizzate</span>
+                          ) : r.status === 'improvement_request' ? (
+                            <span>
+                              {r.customer_name}
+                              {r.customer_email && ` · ${r.customer_email}`}
+                            </span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </td>
+                        <td className="admin-report-actions">
+                          <button className="icon-btn" title="Dettagli">
+                            <Search size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {selectedReport && (
+          <div className="modal-backdrop" onClick={() => setSelectedReport(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h2>
+                  {selectedReport.status === 'ko' ? 'Report non-copertura' : 'Richiesta miglioramento'}
+                </h2>
+                <button onClick={() => setSelectedReport(null)} className="icon-btn"><X size={18} /></button>
+              </div>
+              <div className="admin-report-modal-body">
+                <div className="admin-report-modal-meta">
+                  <div>
+                    <Clock size={14} />
+                    <span>{new Date(selectedReport.created_at).toLocaleString('it-IT')}</span>
+                  </div>
+                  <div>
+                    <MapPin size={14} />
+                    <a
+                      href={`https://www.google.com/maps?q=${selectedReport.customer_lat},${selectedReport.customer_lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {selectedReport.customer_lat.toFixed(5)}, {selectedReport.customer_lng.toFixed(5)}
+                    </a>
+                  </div>
+                  {selectedReport.address && (
+                    <div>
+                      <MapPin size={14} />
+                      <span>{selectedReport.address}</span>
+                    </div>
+                  )}
+                </div>
+
+                {selectedReport.status === 'improvement_request' && (
+                  <div className="admin-report-contact">
+                    <h3>Dati cliente</h3>
+                    <div className="admin-report-contact-grid">
+                      <div><User size={14} /> <span>{selectedReport.customer_name ?? '—'}</span></div>
+                      <div><Mail size={14} /> <span>{selectedReport.customer_email ?? '—'}</span></div>
+                      {selectedReport.customer_phone && (
+                        <div><Phone size={14} /> <span>{selectedReport.customer_phone}</span></div>
+                      )}
+                    </div>
+                    {selectedReport.message && (
+                      <div className="admin-report-message">
+                        <strong>Messaggio:</strong>
+                        <p>{selectedReport.message}</p>
+                      </div>
+                    )}
+                    <a
+                      href={`mailto:${selectedReport.customer_email}?subject=Risposta%20richiesta%20copertura%20NetBee`}
+                      className="btn btn-primary"
+                    >
+                      <Mail size={16} /> Rispondi al cliente
+                    </a>
+                  </div>
+                )}
+
+                {selectedReport.status === 'ko' && selectedReport.ko_report && (
+                  <div className="admin-report-ko">
+                    <h3>Analisi tecnica</h3>
+                    <table className="admin-report-ko-table">
+                      <thead>
+                        <tr>
+                          <th>Stazione</th>
+                          <th>Distanza</th>
+                          <th>Esito</th>
+                          <th>Motivo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedReport.ko_report.map((e, i) => (
+                          <tr key={i}>
+                            <td>{e.bts_name}</td>
+                            <td>{e.distance_km.toFixed(1)} km</td>
+                            <td>
+                              <span className={`admin-report-badge admin-report-badge-${e.within_max_range ? (e.azimuth_ok ? (e.path_clear ? 'ok' : 'ko') : 'ko') : 'ko'}`}>
+                                {e.within_max_range ? (e.azimuth_ok ? (e.path_clear ? 'OK' : 'Bloccato') : 'Settore') : 'Range'}
+                              </span>
+                            </td>
+                            <td>{e.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </main>
