@@ -1,9 +1,13 @@
-import { useState, useRef, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import { Icon, LatLngExpression, LeafletMouseEvent } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle, Signal, MapPin, Zap, TrendingUp } from 'lucide-react';
+import {
+  Search, Loader2, Radio, ArrowLeft, Check, X, AlertTriangle,
+  MapPin, Zap, TrendingUp, Mail, Phone, User, Send, FileText,
+} from 'lucide-react';
 import { CoverageResult, checkCoverage } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const DEFAULT_CENTER: LatLngExpression = [44.7286, 8.0314];
 
@@ -52,15 +56,9 @@ function Geolocate() {
   return null;
 }
 
-const QUALITY_LABELS: Record<CoverageResult['link_quality'], string> = {
-  good: 'Ottima',
-  marginal: 'Marginale',
-  blocked: 'Ostruita',
-  out_of_range: 'Fuori portata',
-};
+type View = 'search' | 'positive' | 'negative';
 
 export default function Copertura() {
-  const [loadingBts, setLoadingBts] = useState(true);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [customerPos, setCustomerPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -68,12 +66,17 @@ export default function Copertura() {
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flyTarget, setFlyTarget] = useState<LatLngExpression | null>(null);
-  const [selectedResult, setSelectedResult] = useState<CoverageResult | null>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<View>('search');
+  const [koReportSent, setKoReportSent] = useState(false);
+  const [improvementSent, setImprovementSent] = useState(false);
+  const [improvementSending, setImprovementSending] = useState(false);
 
-  useEffect(() => {
-    setLoadingBts(false);
-  }, []);
+  // improvement request form
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [message, setMessage] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const geocode = async (e: FormEvent) => {
     e.preventDefault();
@@ -94,43 +97,116 @@ export default function Copertura() {
       const pos = { lat: parseFloat(lat), lng: parseFloat(lon) };
       setCustomerPos(pos);
       setFlyTarget([pos.lat, pos.lng]);
-      await runCheck(pos);
+      await runCheck(pos, query);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Errore ricerca');
     }
     setSearching(false);
   };
 
-  const runCheck = async (pos: { lat: number; lng: number }) => {
+  const runCheck = async (pos: { lat: number; lng: number }, address?: string) => {
     setChecking(true);
     setError(null);
     setResults(null);
-    setSelectedResult(null);
+    setKoReportSent(false);
+    setImprovementSent(false);
+    setView('search');
     try {
       const data = await checkCoverage(pos.lat, pos.lng);
-      setResults(data.results);
+      const res = data.results;
+      setResults(res);
+      const hasAnyReachable = res.some((r) => r.link_quality === 'good' || r.link_quality === 'marginal');
+      if (hasAnyReachable) {
+        setView('positive');
+      } else {
+        setView('negative');
+        // automatic KO report
+        await sendKoReport(pos, res, address);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Errore verifica copertura');
     }
     setChecking(false);
   };
 
-  const handleMapClick = (lat: number, lng: number) => {
-    const pos = { lat, lng };
-    setCustomerPos(pos);
-    setQuery('');
-    runCheck(pos);
+  const sendKoReport = async (pos: { lat: number; lng: number }, res: CoverageResult[], address?: string) => {
+    try {
+      const koReport = res.map((r) => ({
+        bts_id: r.bts.id,
+        bts_name: r.bts.name,
+        distance_km: r.distance_km,
+        within_max_range: r.within_max_range,
+        azimuth_ok: r.azimuth_ok,
+        path_clear: r.path_clear,
+        link_quality: r.link_quality,
+        reason: !r.within_max_range
+          ? 'Fuori raggio massimo'
+          : !r.azimuth_ok
+            ? 'Fuori settore antenna'
+            : !r.path_clear
+              ? 'Line-of-sight ostruita'
+              : 'Segnale insufficiente',
+      }));
+      await supabase.from('coverage_requests').insert({
+        customer_lat: pos.lat,
+        customer_lng: pos.lng,
+        address: address ?? null,
+        status: 'ko',
+        ko_report: koReport,
+      });
+      setKoReportSent(true);
+    } catch {
+      // silent — user doesn't need to see internal report errors
+    }
   };
 
-  const handleProfileView = (r: CoverageResult) => {
-    setSelectedResult(r);
-    setTimeout(() => {
-      profileRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
+  const submitImprovement = async (e: FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!name.trim() || !email.trim()) {
+      setFormError('Nome ed email sono obbligatori.');
+      return;
+    }
+    if (!customerPos) {
+      setFormError('Posizione non disponibile. Esegui prima una verifica copertura.');
+      return;
+    }
+    setImprovementSending(true);
+    try {
+      const { error: insertError } = await supabase.from('coverage_requests').insert({
+        customer_lat: customerPos.lat,
+        customer_lng: customerPos.lng,
+        address: query || null,
+        status: 'improvement_request',
+        customer_name: name.trim(),
+        customer_email: email.trim(),
+        customer_phone: phone.trim() || null,
+        message: message.trim() || null,
+      });
+      if (insertError) throw insertError;
+      setImprovementSent(true);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Invio non riuscito. Riprova.');
+    }
+    setImprovementSending(false);
+  };
+
+  const reset = () => {
+    setView('search');
+    setResults(null);
+    setCustomerPos(null);
+    setQuery('');
+    setKoReportSent(false);
+    setImprovementSent(false);
+    setName('');
+    setEmail('');
+    setPhone('');
+    setMessage('');
+    setFormError(null);
   };
 
   const bestResult = results?.find((r) => r.recommendation.recommended_profile !== null) ?? null;
-  const hasAnyReachable = results?.some((r) => r.link_quality === 'good' || r.link_quality === 'marginal') ?? false;
+  const reachableResults = results?.filter((r) => r.link_quality === 'good' || r.link_quality === 'marginal') ?? [];
 
   return (
     <div className="cop-page">
@@ -140,7 +216,7 @@ export default function Copertura() {
             <ArrowLeft size={16} /> NetBee
           </a>
           <h1 className="cop-title">
-            <Signal size={20} /> Verifica Copertura FWA
+            <Radio size={20} /> Verifica Copertura
           </h1>
         </div>
       </header>
@@ -148,9 +224,8 @@ export default function Copertura() {
       <main className="container cop-main">
         <div className="cop-intro">
           <p className="cop-lead">
-            Inserisci il tuo indirizzo o clicca sulla mappa per verificare la copertura FWA
-            dalle stazioni BTS NetBee. Il calcolo considera distanza, orientamento antenna,
-            profilo altimetrico del terreno (DEM SRTM 90m) e clearance della zona di Fresnel.
+            Inserisci il tuo indirizzo o clicca sulla mappa per verificare subito se la tua posizione
+            è coperta dal servizio FWA NetBee.
           </p>
         </div>
 
@@ -190,150 +265,58 @@ export default function Copertura() {
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
                 attribution='Esri, HERE, Garmin'
               />
-              <ClickHandler onClick={handleMapClick} />
+              <ClickHandler onClick={(lat, lng) => {
+                const pos = { lat, lng };
+                setCustomerPos(pos);
+                setQuery('');
+                runCheck(pos);
+              }} />
               <Geolocate />
               <FlyTo center={flyTarget} />
               {customerPos && (
-                <Marker position={[customerPos.lat, customerPos.lng]} icon={customerIcon()}>
-                </Marker>
+                <Marker position={[customerPos.lat, customerPos.lng]} icon={customerIcon()} />
               )}
             </MapContainer>
             <div className="cop-map-hint">
-              <MapPin size={14} /> Clicca sulla mappa per posizionare il cliente
+              <MapPin size={14} /> Clicca sulla mappa per posizionare il punto da verificare
             </div>
           </div>
 
           <div className="cop-results">
-            {loadingBts ? (
-              <div className="cop-empty"><Loader2 size={24} className="spin" /></div>
+            {checking ? (
+              <div className="cop-empty">
+                <Loader2 size={28} className="spin" />
+                <p>Verifica copertura in corso…</p>
+                <p className="cop-empty-sub">Analisi della posizione e del segnale</p>
+              </div>
+            ) : view === 'positive' && bestResult?.recommendation.recommended_profile ? (
+              <PositiveResult
+                result={bestResult}
+                reachableCount={reachableResults.length}
+                onReset={reset}
+              />
+            ) : view === 'negative' ? (
+              <NegativeResult
+                koReportSent={koReportSent}
+                improvementSent={improvementSent}
+                improvementSending={improvementSending}
+                formError={formError}
+                name={name}
+                email={email}
+                phone={phone}
+                message={message}
+                setName={setName}
+                setEmail={setEmail}
+                setPhone={setPhone}
+                setMessage={setMessage}
+                onSubmit={submitImprovement}
+                onReset={reset}
+              />
             ) : !customerPos ? (
               <div className="cop-empty">
                 <Radio size={36} />
                 <p>Inserisci un indirizzo o clicca sulla mappa per verificare la copertura.</p>
               </div>
-            ) : checking ? (
-              <div className="cop-empty">
-                <Loader2 size={28} className="spin" />
-                <p>Calcolo copertura in corso…</p>
-                <p className="cop-empty-sub">Analisi profilo altimetrico e zona di Fresnel</p>
-              </div>
-            ) : results && results.length > 0 ? (
-              <>
-                <div className={`cop-summary ${hasAnyReachable ? 'ok' : 'no'}`}>
-                  {hasAnyReachable && bestResult?.recommendation.recommended_profile ? (
-                    <>
-                      <Check size={22} />
-                      <div>
-                        <strong>Copertura disponibile</strong>
-                        <span>
-                          Profilo consigliato: {bestResult.recommendation.recommended_profile.label} ({bestResult.recommendation.recommended_profile.download_mbps}/{bestResult.recommendation.recommended_profile.upload_mbps} Mbps)
-                        </span>
-                      </div>
-                    </>
-                  ) : hasAnyReachable ? (
-                    <>
-                      <AlertTriangle size={22} />
-                      <div>
-                        <strong>Connessione marginale</strong>
-                        <span>Segnale presente ma richiede sopralluogo tecnico di conferma</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle size={22} />
-                      <div>
-                        <strong>Copertura non disponibile</strong>
-                        <span>Nessuna BTS raggiunge questa posizione in line-of-sight</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {bestResult?.recommendation.recommended_profile && (
-                  <div className="cop-profile-card">
-                    <div className="cop-profile-card-head">
-                      <Zap size={20} />
-                      <h3>Profilo consigliato per te</h3>
-                    </div>
-                    {(() => {
-                      const p = bestResult.recommendation.recommended_profile;
-                      return (
-                        <div className="cop-profile-card-body">
-                          <div className="cop-profile-name">{p.label}</div>
-                          <div className="cop-profile-speeds">
-                            <span><TrendingUp size={16} /> {p.download_mbps} Mbps download</span>
-                            <span><TrendingUp size={16} className="rotate-180" /> {p.upload_mbps} Mbps upload</span>
-                          </div>
-                          <div className="cop-profile-prices">
-                            <div className="cop-price-tag">
-                              <span className="cop-price-val">{p.price_bimonthly.toFixed(2)}€</span>
-                              <span className="cop-price-label">/mese · contratto bimestrale</span>
-                            </div>
-                            {p.yearly_enabled && (
-                              <div className="cop-price-tag cop-price-yearly">
-                                <span className="cop-price-val">{p.price_yearly.toFixed(2)}€</span>
-                                <span className="cop-price-label">/mese · contratto annuale</span>
-                              </div>
-                            )}
-                          </div>
-                          {p.requires_coverage_check && (
-                            <div className="cop-profile-verified">
-                              <Check size={14} /> Copertura verificata per questa posizione
-                            </div>
-                          )}
-                          <div className="cop-profile-confidence">
-                            Affidabilità: {bestResult.recommendation.confidence === 'high' ? 'Alta' : 'Media'}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                <ul className="cop-bts-list">
-                  {results.map((r) => (
-                    <li
-                      key={r.bts.id}
-                      className={`cop-bts-item q-${r.link_quality}${selectedResult?.bts.id === r.bts.id ? ' selected' : ''}`}
-                      onClick={() => handleProfileView(r)}
-                    >
-                      <div className="cop-bts-status">
-                        <span className={`cop-q-dot q-${r.link_quality}`} />
-                      </div>
-                      <div className="cop-bts-main">
-                        <div className="cop-bts-name">
-                          Stazione {String.fromCharCode(65 + results.indexOf(r) + 1)}
-                          <span className={`cop-q-tag q-${r.link_quality}`}>{QUALITY_LABELS[r.link_quality]}</span>
-                        </div>
-                        <div className="cop-bts-meta">
-                          {r.distance_km} km
-                          {r.recommendation.recommended_profile && ` · ${r.recommendation.recommended_profile.label}`}
-                        </div>
-                        <div className="cop-bts-detail">
-                          {!r.within_max_range && <span>Fuori raggio massimo ({r.bts.max_range_km} km)</span>}
-                          {r.within_max_range && !r.azimuth_ok && <span>Fuori settore antenna</span>}
-                          {r.within_max_range && r.azimuth_ok && !r.path_clear && (
-                            <span>
-                              Line-of-sight ostruita
-                              {r.link_budget?.worst_obstruction_m !== null && r.link_budget?.worst_obstruction_m !== undefined && ` (${r.link_budget.worst_obstruction_m}m)`}
-                            </span>
-                          )}
-                          {r.within_max_range && r.azimuth_ok && r.path_clear && (
-                            <span>
-                              LOS libera · clearance Fresnel {r.link_budget?.fresnel_clearance_m ?? 0}m
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {r.profile.length > 0 && (
-                        <button className="cop-profile-btn" title="Vedi profilo altimetrico">
-                          <ArrowLeft size={14} className="rotate-180" />
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </>
             ) : (
               <div className="cop-empty">
                 <AlertTriangle size={28} />
@@ -342,90 +325,202 @@ export default function Copertura() {
             )}
           </div>
         </div>
-
-        {selectedResult && selectedResult.profile.length > 0 && (
-          <div className="cop-profile" ref={profileRef}>
-            <div className="cop-profile-head">
-              <h3>Profilo altimetrico</h3>
-              <button onClick={() => setSelectedResult(null)} className="icon-btn"><X size={16} /></button>
-            </div>
-            <CoverageChart result={selectedResult} />
-            <div className="cop-profile-legend">
-              <span><i className="legend-line los" /> Linea di vista (LOS)</span>
-              <span><i className="legend-line terrain" /> Terreno (DEM)</span>
-              <span>Distanza totale: {selectedResult.distance_km} km</span>
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );
 }
 
-function CoverageChart({ result }: { result: CoverageResult }) {
-  const W = 800;
-  const H = 240;
-  const PAD_L = 48;
-  const PAD_R = 16;
-  const PAD_T = 16;
-  const PAD_B = 32;
-  const innerW = W - PAD_L - PAD_R;
-  const innerH = H - PAD_T - PAD_B;
+function PositiveResult({
+  result,
+  reachableCount,
+  onReset,
+}: {
+  result: CoverageResult;
+  reachableCount: number;
+  onReset: () => void;
+}) {
+  const p = result.recommendation.recommended_profile!;
+  return (
+    <div className="cop-positive">
+      <div className="cop-verdict cop-verdict-ok">
+        <Check size={28} />
+        <div>
+          <strong>Copertura disponibile</strong>
+          <span>La tua posizione è raggiunta dal servizio NetBee{reachableCount > 1 ? ` da ${reachableCount} stazioni` : ''}.</span>
+        </div>
+      </div>
 
-  const profile = result.profile;
-  const maxDist = profile[profile.length - 1]?.distance_m ?? 1;
-  const allHeights = [...profile.map((p) => p.terrain_m), ...profile.map((p) => p.los_m)];
-  const zBtsGround = profile[0] ? profile[0].terrain_m : 0;
-  const zBtsAntenna = zBtsGround + result.bts.antenna_height_m;
-  const zCustomer = profile[profile.length - 1]
-    ? profile[profile.length - 1].terrain_m + 5
-    : 0;
-  allHeights.push(zBtsAntenna, zCustomer);
-  const minH = Math.min(...allHeights) - 10;
-  const maxH = Math.max(...allHeights) + 10;
-  const hRange = maxH - minH || 1;
+      <div className="cop-profile-card">
+        <div className="cop-profile-card-head">
+          <Zap size={20} />
+          <h3>Profilo consigliato per te</h3>
+        </div>
+        <div className="cop-profile-card-body">
+          <div className="cop-profile-name">{p.label}</div>
+          <div className="cop-profile-speeds">
+            <span><TrendingUp size={16} /> {p.download_mbps} Mbps download</span>
+            <span><TrendingUp size={16} className="rotate-180" /> {p.upload_mbps} Mbps upload</span>
+          </div>
+          <div className="cop-profile-prices">
+            <div className="cop-price-tag">
+              <span className="cop-price-val">{p.price_bimonthly.toFixed(2)}€</span>
+              <span className="cop-price-label">/mese · contratto bimestrale</span>
+            </div>
+            {p.yearly_enabled && (
+              <div className="cop-price-tag cop-price-yearly">
+                <span className="cop-price-val">{p.price_yearly.toFixed(2)}€</span>
+                <span className="cop-price-label">/mese · contratto annuale</span>
+              </div>
+            )}
+          </div>
+          {p.requires_coverage_check && (
+            <div className="cop-profile-verified">
+              <Check size={14} /> Copertura verificata per questa posizione
+            </div>
+          )}
+        </div>
+      </div>
 
-  const x = (d: number) => PAD_L + (d / maxDist) * innerW;
-  const y = (h: number) => PAD_T + innerH - ((h - minH) / hRange) * innerH;
+      <a href="mailto:amministrazione@netbee.it?subject=Richiesta%20attivazione%20FWA" className="btn btn-primary btn-lg cop-cta">
+        <Mail size={18} /> Contattaci per attivare il servizio
+      </a>
+      <button className="cop-link-btn" onClick={onReset}>Verifica un'altra posizione</button>
+    </div>
+  );
+}
 
-  const losPts = [
-    { distance_m: 0, los_m: zBtsAntenna },
-    ...profile.map((p) => ({ distance_m: p.distance_m, los_m: p.los_m })),
-    { distance_m: maxDist, los_m: zCustomer },
-  ];
-  const terrainPts = [
-    { distance_m: 0, terrain_m: zBtsGround },
-    ...profile.map((p) => ({ distance_m: p.distance_m, terrain_m: p.terrain_m })),
-    { distance_m: maxDist, terrain_m: profile[profile.length - 1]?.terrain_m ?? zBtsGround },
-  ];
-
-  const losPath = `M ${losPts.map((p) => `${x(p.distance_m).toFixed(1)} ${y(p.los_m).toFixed(1)}`).join(' L ')}`;
-  const terrainPath = `M ${terrainPts.map((p) => `${x(p.distance_m).toFixed(1)} ${y(p.terrain_m).toFixed(1)}`).join(' L ')} L ${x(maxDist)} ${PAD_T + innerH} L ${PAD_L} ${PAD_T + innerH} Z`;
-
-  const yTicks = 4;
-  const ticks = Array.from({ length: yTicks + 1 }, (_, i) => minH + (i / yTicks) * hRange);
-  const xTicks = 5;
-  const xTickVals = Array.from({ length: xTicks + 1 }, (_, i) => (i / xTicks) * maxDist);
+function NegativeResult({
+  koReportSent,
+  improvementSent,
+  improvementSending,
+  formError,
+  name,
+  email,
+  phone,
+  message,
+  setName,
+  setEmail,
+  setPhone,
+  setMessage,
+  onSubmit,
+  onReset,
+}: {
+  koReportSent: boolean;
+  improvementSent: boolean;
+  improvementSending: boolean;
+  formError: string | null;
+  name: string;
+  email: string;
+  phone: string;
+  message: string;
+  setName: (v: string) => void;
+  setEmail: (v: string) => void;
+  setPhone: (v: string) => void;
+  setMessage: (v: string) => void;
+  onSubmit: (e: FormEvent) => void;
+  onReset: () => void;
+}) {
+  if (improvementSent) {
+    return (
+      <div className="cop-negative">
+        <div className="cop-verdict cop-verdict-ok">
+          <Check size={28} />
+          <div>
+            <strong>Richiesta inviata</strong>
+            <span>Grazie! Ti contatteremo appena possibile per valutare un'estensione della copertura nella tua zona.</span>
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={onReset}>Verifica un'altra posizione</button>
+      </div>
+    );
+  }
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="cop-chart" preserveAspectRatio="xMidYMid meet">
-      {ticks.map((t, i) => (
-        <g key={`y${i}`}>
-          <line x1={PAD_L} y1={y(t)} x2={W - PAD_R} y2={y(t)} stroke="#e2e8f0" strokeWidth="1" />
-          <text x={PAD_L - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="#64748b">{Math.round(t)}m</text>
-        </g>
-      ))}
-      {xTickVals.map((d, i) => (
-        <g key={`x${i}`}>
-          <text x={x(d)} y={H - PAD_B + 16} textAnchor="middle" fontSize="10" fill="#64748b">
-            {(d / 1000).toFixed(1)}km
-          </text>
-        </g>
-      ))}
-      <path d={terrainPath} fill="rgba(23,82,199,0.08)" stroke="#1752c7" strokeWidth="1.5" />
-      <path d={losPath} fill="none" stroke="#e29743" strokeWidth="1.8" strokeDasharray="4 3" />
-      <circle cx={x(0)} cy={y(zBtsAntenna)} r="4" fill="#1752c7" />
-      <circle cx={x(maxDist)} cy={y(zCustomer)} r="4" fill="#e29743" />
-    </svg>
+    <div className="cop-negative">
+      <div className="cop-verdict cop-verdict-no">
+        <AlertTriangle size={28} />
+        <div>
+          <strong>Copertura non disponibile</strong>
+          <span>Al momento nessuna stazione raggiunge questa posizione in line-of-sight.</span>
+        </div>
+      </div>
+
+      {koReportSent && (
+        <div className="cop-ko-report">
+          <FileText size={16} />
+          <span>Report di non-copertura registrato automaticamente.</span>
+        </div>
+      )}
+
+      <div className="cop-improve">
+        <h3>Richiedi l'estensione della copertura</h3>
+        <p className="cop-improve-sub">
+          Inserisci i tuoi dati: verificheremo la fattibilità tecnica e ti contatteremo
+          se ci sono sviluppi nella tua zona.
+        </p>
+        <form className="cop-form" onSubmit={onSubmit}>
+          <div className="cop-form-row">
+            <div className="cop-form-field">
+              <label>Nome e cognome *</label>
+              <div className="cop-form-input">
+                <User size={16} />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Mario Rossi"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+          <div className="cop-form-row cop-form-row-2">
+            <div className="cop-form-field">
+              <label>Email *</label>
+              <div className="cop-form-input">
+                <Mail size={16} />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="mario.rossi@email.it"
+                  required
+                />
+              </div>
+            </div>
+            <div className="cop-form-field">
+              <label>Telefono</label>
+              <div className="cop-form-input">
+                <Phone size={16} />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="348 1234567"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="cop-form-row">
+            <div className="cop-form-field">
+              <label>Messaggio</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Es. indirizzo preciso o note sulla zona da coprire"
+                rows={3}
+              />
+            </div>
+          </div>
+          {formError && <div className="cop-form-error">{formError}</div>}
+          <button type="submit" className="btn btn-primary btn-lg cop-cta" disabled={improvementSending}>
+            {improvementSending ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
+            Invia richiesta
+          </button>
+        </form>
+      </div>
+
+      <button className="cop-link-btn" onClick={onReset}>Verifica un'altra posizione</button>
+    </div>
   );
 }
