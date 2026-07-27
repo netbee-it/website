@@ -49,7 +49,7 @@ const TOPOLOGY = [
   {
     icon: <Camera size={20} />,
     label: 'Telecamere UniFi',
-    desc: 'In ogni punto strategico',
+    sub: 'In ogni punto strategico',
     color: 'green',
   },
 ];
