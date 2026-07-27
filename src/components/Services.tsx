@@ -1,4 +1,4 @@
-import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home } from 'lucide-react';
+import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home, ExternalLink } from 'lucide-react';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
 const voipAddons = [
@@ -22,6 +22,8 @@ const services = [
       'Dal piccolo appartamento al grande magazzino',
       'Scalabilità e sicurezza garantite',
     ],
+    demoUrl: 'https://demo.ui.com',
+    demoLabel: 'Prova la demo UniFi Network',
   },
   {
     id: 'cablaggio',
@@ -88,6 +90,17 @@ function ServiceCard({ service, delay }: { service: (typeof services)[0]; delay:
           </li>
         ))}
       </ul>
+      {service.demoUrl && (
+        <a
+          href={service.demoUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="service-demo-link"
+        >
+          <ExternalLink size={15} />
+          {service.demoLabel}
+        </a>
+      )}
       {service.addons && (
         <div className="voip-addons" style={{ borderTopColor: 'var(--border)' }}>
           <div className="voip-addons-title" style={{ color: 'var(--text-secondary)' }}>

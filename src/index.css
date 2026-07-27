@@ -874,6 +874,27 @@ body {
 }
 .service-card.featured-service .service-check { color: var(--accent); }
 
+.service-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(23, 82, 199, 0.08);
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all var(--transition);
+  align-self: flex-start;
+}
+.service-demo-link:hover {
+  background: var(--primary);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .service-cctv-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
