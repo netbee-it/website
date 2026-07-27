@@ -14,6 +14,9 @@ const DEFAULT_CUSTOMER_ANTENNA_HEIGHT_M = 5;
 const PATH_SAMPLE_POINTS = 60;
 const FRESNEL_CLEARANCE_FACTOR = 0.6;
 const ELEVATION_API = "https://api.opentopodata.org/v1/srtm90m";
+const ELEVATION_API_MAX_LOCATIONS = 100;
+const ELEVATION_API_MAX_RETRIES = 2;
+const ELEVATION_API_RETRY_DELAY_MS = 1200;
 
 const CLIENT = {
   tx_power_dbm: 22,
@@ -147,19 +150,81 @@ function fresnelRadiusM(d1M: number, d2M: number, wavelengthM: number): number {
   return Math.sqrt((wavelengthM * d1M * d2M) / (d1M + d2M));
 }
 
-async function fetchElevations(points: { lat: number; lng: number }[]): Promise<number[]> {
-  if (points.length === 0) return [];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchElevationsBatch(points: { lat: number; lng: number }[]): Promise<number[]> {
   const locations = points.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join("|");
   const url = `${ELEVATION_API}?locations=${locations}`;
-  const resp = await fetch(url, { method: "GET" });
-  if (!resp.ok) {
-    throw new Error(`Elevation API ${resp.status}: ${await resp.text()}`);
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt <= ELEVATION_API_MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(url, { method: "GET" });
+      if (resp.status === 429 || resp.status === 503) {
+        lastErr = new Error(`Elevation API rate limited (${resp.status})`);
+        if (attempt < ELEVATION_API_MAX_RETRIES) {
+          await sleep(ELEVATION_API_RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        throw lastErr;
+      }
+      if (!resp.ok) {
+        throw new Error(`Elevation API ${resp.status}: ${await resp.text()}`);
+      }
+      const json = await resp.json();
+      if (!json.results || json.results.length !== points.length) {
+        throw new Error("Elevation API returned mismatched results");
+      }
+      return json.results.map((r: { elevation: number | null }) => (r.elevation === null ? 0 : r.elevation));
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (attempt < ELEVATION_API_MAX_RETRIES) {
+        await sleep(ELEVATION_API_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+    }
   }
-  const json = await resp.json();
-  if (!json.results || json.results.length !== points.length) {
-    throw new Error("Elevation API returned mismatched results");
+  throw lastErr ?? new Error("Elevation API failed");
+}
+
+function roundKey(p: { lat: number; lng: number }, precision = 5): string {
+  return `${p.lat.toFixed(precision)},${p.lng.toFixed(precision)}`;
+}
+
+async function fetchAllElevations(
+  allPoints: { lat: number; lng: number }[],
+): Promise<Map<string, number>> {
+  const elevationMap = new Map<string, number>();
+  const uniqueKeys: string[] = [];
+  const uniquePoints: { lat: number; lng: number }[] = [];
+  const keyToIndex = new Map<string, number>();
+
+  for (const p of allPoints) {
+    const key = roundKey(p);
+    if (!elevationMap.has(key)) {
+      elevationMap.set(key, 0);
+      keyToIndex.set(key, uniquePoints.length);
+      uniqueKeys.push(key);
+      uniquePoints.push(p);
+    }
   }
-  return json.results.map((r: { elevation: number | null }) => (r.elevation === null ? 0 : r.elevation));
+
+  for (let i = 0; i < uniquePoints.length; i += ELEVATION_API_MAX_LOCATIONS) {
+    const chunk = uniquePoints.slice(i, i + ELEVATION_API_MAX_LOCATIONS);
+    try {
+      const elevs = await fetchElevationsBatch(chunk);
+      for (let j = 0; j < chunk.length; j++) {
+        const key = roundKey(chunk[j]);
+        elevationMap.set(key, elevs[j]);
+      }
+    } catch (err) {
+      console.error(`Elevation batch ${i / ELEVATION_API_MAX_LOCATIONS} failed:`, err instanceof Error ? err.message : err);
+    }
+    if (i + ELEVATION_API_MAX_LOCATIONS < uniquePoints.length) {
+      await sleep(1100);
+    }
+  }
+
+  return elevationMap;
 }
 
 function computeProfile(
@@ -304,7 +369,6 @@ function recommendProfile(
 
   const confidence = linkQuality === "good" ? "high" : "medium";
 
-  // Try rules first: pick the highest-threshold rule whose min_dbm <= received power
   if (receivedPowerDbm !== null && rules.length > 0) {
     const activeRules = rules
       .filter((r) => r.active)
@@ -329,7 +393,6 @@ function recommendProfile(
     }
   }
 
-  // Fallback: old throughput-based logic
   const deratedDown = throughputDown * 0.8;
   const deratedUp = throughputUp * 0.8;
 
@@ -447,7 +510,37 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const activeBts = (btsList as Bts[]).filter((bts) => {
+      const distanceKm = haversineMeters(bts.lat, bts.lng, body.lat, body.lng) / 1000;
+      const withinMaxRange = distanceKm <= bts.max_range_km;
+      const pathBearing = bearingDeg(bts.lat, bts.lng, body.lat, body.lng);
+      const azimuthOk = bts.azimuth_deg === null || angularDifferenceDeg(pathBearing, bts.azimuth_deg) <= 60;
+      return withinMaxRange && azimuthOk;
+    });
+
+    const allPoints: { lat: number; lng: number }[] = [];
+    const btsPointRanges: { btsId: string; start: number; end: number }[] = [];
+
+    for (const bts of activeBts) {
+      const distanceKm = haversineMeters(bts.lat, bts.lng, body.lat, body.lng) / 1000;
+      const pathBearing = bearingDeg(bts.lat, bts.lng, body.lat, body.lng);
+      const start = allPoints.length;
+      for (let i = 0; i < PATH_SAMPLE_POINTS; i++) {
+        const t = i / (PATH_SAMPLE_POINTS - 1);
+        const distM = t * distanceKm * 1000;
+        allPoints.push(destinationPoint(bts.lat, bts.lng, pathBearing, distM));
+      }
+      btsPointRanges.push({ btsId: bts.id, start, end: allPoints.length });
+    }
+
+    const elevationMap = await fetchAllElevations(allPoints);
+    const elevationSuccessRatio = elevationMap.size > 0
+      ? Array.from(elevationMap.values()).filter((v) => v !== 0).length / elevationMap.size
+      : 0;
+    const elevationsAvailable = elevationSuccessRatio > 0.5;
+
     const results: CoverageResult[] = [];
+
     for (const bts of btsList as Bts[]) {
       const distanceKm = haversineMeters(bts.lat, bts.lng, body.lat, body.lng) / 1000;
       const withinMaxRange = distanceKm <= bts.max_range_km;
@@ -471,17 +564,8 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      const points: { lat: number; lng: number }[] = [];
-      for (let i = 0; i < PATH_SAMPLE_POINTS; i++) {
-        const t = i / (PATH_SAMPLE_POINTS - 1);
-        const distM = t * distanceKm * 1000;
-        points.push(destinationPoint(bts.lat, bts.lng, pathBearing, distM));
-      }
-
-      let elevations: number[];
-      try {
-        elevations = await fetchElevations(points);
-      } catch (err) {
+      const range = btsPointRanges.find((r) => r.btsId === bts.id);
+      if (!range) {
         const lb = computeLinkBudget(bts, distanceKm, false, null, null);
         results.push({
           bts,
@@ -494,7 +578,28 @@ Deno.serve(async (req: Request) => {
           recommendation: recommendProfile("blocked", lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles, lb.received_power_dbm, rules),
           profile: [],
         });
-        console.error(`Elevation fetch failed for BTS ${bts.id}:`, err.message);
+        continue;
+      }
+
+      const btsPoints = allPoints.slice(range.start, range.end);
+      const elevations = btsPoints.map((p) => elevationMap.get(roundKey(p)) ?? 0);
+
+      const hasRealElevations = elevations.some((e) => e !== 0);
+
+      if (!hasRealElevations && !elevationsAvailable) {
+        const lb = computeLinkBudget(bts, distanceKm, true, null, null);
+        const quality = classifyQuality(withinMaxRange, azimuthOk, true, lb.fade_margin_db);
+        results.push({
+          bts,
+          distance_km: Number(distanceKm.toFixed(2)),
+          within_max_range: withinMaxRange,
+          azimuth_ok: azimuthOk,
+          path_clear: true,
+          link_quality: quality,
+          link_budget: lb,
+          recommendation: recommendProfile(quality, lb.estimated_throughput_mbps.down, lb.estimated_throughput_mbps.up, profiles, lb.received_power_dbm, rules),
+          profile: [],
+        });
         continue;
       }
 
