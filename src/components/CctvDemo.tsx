@@ -127,7 +127,7 @@ export default function CctvDemo({ onClose }: { onClose: () => void }) {
             </div>
             <p className="wifi-topo-caption">
               Le telecamere si collegano alla rete UniFi e registrano su un recorder locale.
-              Vedi tutto dall\'app, con notifiche intelligenti che filtrano i falsi allarmi.
+              Vedi tutto dall'app, con notifiche intelligenti che filtrano i falsi allarmi.
             </p>
           </div>
 
@@ -160,7 +160,7 @@ export default function CctvDemo({ onClose }: { onClose: () => void }) {
               </div>
               <div className="wifi-summary-item">
                 <Check size={16} />
-                Tutto dall\'app, in diretta e in registrazione, giorno e notte
+                Tutto dall'app, in diretta e in registrazione, giorno e notte
               </div>
             </div>
           </div>

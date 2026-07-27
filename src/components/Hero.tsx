@@ -46,10 +46,10 @@ export default function Hero() {
             </a>
           </div>
 
-          <div className="hero-coverage-notice">
+          <a href="/copertura" className="hero-coverage-notice">
             <Clock size={15} />
-            Verifica Copertura — Prossimamente disponibile
-          </div>
+            Verifica Copertura — Controlla subito la tua zona
+          </a>
 
           <div className="hero-features">
             <div className="hero-feature">
@@ -62,7 +62,7 @@ export default function Hero() {
               <div className="hero-feature-value">
                 <Shield size={28} color="#E29743" />
               </div>
-              <div className="hero-feature-label">Nessun vincolo<br />disponibile</div>
+              <div className="hero-feature-label">Nessun vincolo<br />contrattuale</div>
             </div>
             <div className="hero-feature">
               <div className="hero-feature-value">

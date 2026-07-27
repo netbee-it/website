@@ -389,6 +389,13 @@ body {
   color: var(--accent);
   font-size: 14px;
   font-weight: 500;
+  text-decoration: none;
+  transition: all var(--transition);
+}
+.hero-coverage-notice:hover {
+  background: rgba(226, 151, 67, 0.2);
+  border-color: rgba(226, 151, 67, 0.5);
+  transform: translateY(-1px);
 }
 .hero-features {
   display: grid;
@@ -1583,14 +1590,34 @@ body {
   .header-cta-desktop { display: none; }
   .hamburger { display: flex; }
 
+  .hero-content { padding: 56px 0 64px; }
+  .hero-pills { gap: 6px; margin-bottom: 24px; }
+  .hero-pill { font-size: 12px; padding: 5px 11px; }
+  .hero-title { margin-bottom: 20px; }
+  .hero-subtitle { margin-bottom: 28px; }
+  .hero-cta { gap: 10px; margin-bottom: 40px; }
+  .hero-cta .btn { flex: 1; justify-content: center; }
+  .hero-coverage-notice { font-size: 13px; padding: 8px 14px; }
   .hero-features {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 36px;
   }
+  .hero-feature { padding: 18px 12px; }
+  .hero-feature-value { font-size: 24px; }
+  .hero-feature-label { font-size: 12px; }
 
+  .plans-section { padding: 64px 0; }
+  .plans-header { margin-bottom: 32px; }
+  .plans-tabs { margin-bottom: 28px; }
+  .plans-tab { padding: 10px 22px; font-size: 14px; }
+  .billing-toggle button { padding: 7px 16px; font-size: 13px; }
+
+  .installation-section { padding: 64px 0; }
   .installation-grid {
     grid-template-columns: 1fr;
   }
 
+  .services-section { padding: 64px 0; }
   .services-grid {
     grid-template-columns: 1fr;
   }
@@ -1601,15 +1628,18 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .contact-section { padding: 64px 0; }
   .contact-inner {
     grid-template-columns: 1fr;
     gap: 48px;
   }
+  .contact-map-placeholder { padding: 36px 24px; min-height: 260px; }
 
   .plans-enterprise {
     padding: 32px;
   }
 
+  .footer { padding: 48px 0 28px; }
   .footer-grid {
     grid-template-columns: 1fr;
     gap: 32px;
@@ -1624,10 +1654,6 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .hero-features {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
   .install-card {
     padding: 28px 24px;
   }
@@ -1637,9 +1663,17 @@ body {
   .hero-features {
     grid-template-columns: 1fr;
   }
+  .hero-cta { flex-direction: column; }
+  .hero-cta .btn { width: 100%; }
   .plans-enterprise-actions {
     flex-direction: column;
   }
+  .plans-enterprise { padding: 24px; }
+  .plan-card { padding: 24px 20px; }
+  .install-card { padding: 24px 18px; }
+  .service-card { padding: 24px 20px; }
+  .contact-map-placeholder { padding: 28px 20px; }
+  .wa-popup { width: calc(100vw - 32px); max-width: 320px; }
 }
 
 /* ─── Scroll Reveal Animations ─── */
@@ -2932,13 +2966,33 @@ body {
   .cop-layout { grid-template-columns: 1fr; }
   .cop-map { height: 380px; }
   .cop-map-wrap { position: relative; top: 0; }
+  .admin-tech-layout { grid-template-columns: 1fr; }
+  .admin-tech-right { position: relative; top: 0; }
+  .admin-tech-right .admin-map-container { height: 300px; }
 }
 @media (max-width: 600px) {
   .form-row-3 { grid-template-columns: 1fr; }
   .form-row { flex-direction: column; align-items: stretch; }
   .cop-search { flex-direction: column; }
   .cop-search .btn { justify-content: center; }
+  .cop-main { padding: 24px 16px 48px; }
+  .cop-header-inner { padding: 0 16px; }
+  .cop-positive, .cop-negative { padding: 20px 16px; }
+  .cop-profile-card { padding: 16px; }
+  .cop-profile-speeds { gap: 12px; }
+  .cop-profile-prices { gap: 10px; }
+  .cop-price-tag { padding: 8px 12px; }
+  .cop-verdict { padding: 14px 16px; }
+  .cop-verdict strong { font-size: 16px; }
+  .cop-verdict span { font-size: 12.5px; }
+  .cop-improve { padding: 18px 16px; }
+  .cop-lead { font-size: 14px; }
   .auth-card { padding: 32px 24px; }
+}
+@media (max-width: 480px) {
+  .cop-map { height: 300px; }
+  .cop-title { font-size: 17px; }
+  .cop-back { font-size: 13px; }
 }
 
 /* ─── View Toggle (cards / compare) ─── */
