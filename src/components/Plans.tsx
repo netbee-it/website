@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Check, ArrowRight, Loader2, LayoutGrid, BarChart3 } from 'lucide-react';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 import { supabase, ServiceProfile } from '../lib/supabase';
+import PlanComparison from './PlanComparison';
 
 type BillingType = 'bimestrale' | 'annuale';
 type ClientType = 'privati' | 'business';
+type ViewMode = 'cards' | 'compare';
 
 function PlanCard({
   profile,
@@ -80,6 +82,7 @@ function PlanCard({
 export default function Plans() {
   const [billing, setBilling] = useState<BillingType>('bimestrale');
   const [clientType, setClientType] = useState<ClientType>('privati');
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const headerRef = useScrollReveal();
@@ -161,11 +164,32 @@ export default function Plans() {
           </button>
         </div>
 
-        <div className="plans-grid">
-          {filtered.map((profile) => (
-            <PlanCard key={profile.id} profile={profile} billing={billing} />
-          ))}
+        <div className="view-toggle">
+          <button
+            className={viewMode === 'cards' ? 'active' : ''}
+            onClick={() => setViewMode('cards')}
+          >
+            <LayoutGrid size={16} />
+            Schede
+          </button>
+          <button
+            className={viewMode === 'compare' ? 'active' : ''}
+            onClick={() => setViewMode('compare')}
+          >
+            <BarChart3 size={16} />
+            Confronta
+          </button>
         </div>
+
+        {viewMode === 'cards' ? (
+          <div className="plans-grid">
+            {filtered.map((profile) => (
+              <PlanCard key={profile.id} profile={profile} billing={billing} />
+            ))}
+          </div>
+        ) : (
+          <PlanComparison profiles={filtered} billing={billing} />
+        )}
 
         <div className="plans-enterprise">
           <div>

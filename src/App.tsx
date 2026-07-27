@@ -8,6 +8,7 @@ import Installation from './components/Installation';
 import Services from './components/Services';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
+import WhatsAppWidget from './components/WhatsAppWidget';
 import { Loader2 } from 'lucide-react';
 
 const Copertura = lazy(() => import('./pages/Copertura'));
@@ -26,6 +27,7 @@ function HomePage() {
         <Contact />
       </main>
       <Footer />
+      <WhatsAppWidget />
     </>
   );
 }
