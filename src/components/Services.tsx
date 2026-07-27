@@ -3,6 +3,7 @@ import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home, PlayCircle } f
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
 const WifiDemo = lazy(() => import('./WifiDemo'));
+const CctvDemo = lazy(() => import('./CctvDemo'));
 
 const voipAddons = [
   { label: 'Numero VoIP', price: '6€/mese' },
@@ -126,6 +127,7 @@ export default function Services() {
   const headerRef = useScrollReveal();
   const cctvRef = useScrollReveal();
   const [demoOpen, setDemoOpen] = useState(false);
+  const [cctvOpen, setCctvOpen] = useState(false);
 
   return (
     <section id="servizi" className="services-section">
@@ -220,12 +222,25 @@ export default function Services() {
                 ))}
               </div>
             </div>
+
+            <button
+              className="service-demo-link"
+              onClick={() => setCctvOpen(true)}
+            >
+              <PlayCircle size={16} />
+              Prova la demo interattiva
+            </button>
           </div>
         </div>
       </div>
       {demoOpen && (
         <Suspense fallback={null}>
           <WifiDemo onClose={() => setDemoOpen(false)} />
+        </Suspense>
+      )}
+      {cctvOpen && (
+        <Suspense fallback={null}>
+          <CctvDemo onClose={() => setCctvOpen(false)} />
         </Suspense>
       )}
     </section>
