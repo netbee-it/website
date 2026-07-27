@@ -1,5 +1,8 @@
-import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home, ExternalLink } from 'lucide-react';
+import { useState, lazy, Suspense } from 'react';
+import { Wifi, Cable, Zap, Camera, Phone, Check, Building2, Home, PlayCircle } from 'lucide-react';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+
+const WifiDemo = lazy(() => import('./WifiDemo'));
 
 const voipAddons = [
   { label: 'Numero VoIP', price: '6€/mese' },
@@ -22,8 +25,7 @@ const services = [
       'Dal piccolo appartamento al grande magazzino',
       'Scalabilità e sicurezza garantite',
     ],
-    demoUrl: 'https://demo.ui.com',
-    demoLabel: 'Prova la demo UniFi Network',
+    demo: true,
   },
   {
     id: 'cablaggio',
@@ -69,7 +71,7 @@ const services = [
   },
 ];
 
-function ServiceCard({ service, delay }: { service: (typeof services)[0]; delay: number }) {
+function ServiceCard({ service, delay, onOpenDemo }: { service: (typeof services)[0]; delay: number; onOpenDemo: () => void }) {
   const ref = useScrollReveal();
   return (
     <div
@@ -90,16 +92,14 @@ function ServiceCard({ service, delay }: { service: (typeof services)[0]; delay:
           </li>
         ))}
       </ul>
-      {service.demoUrl && (
-        <a
-          href={service.demoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+      {service.demo && (
+        <button
           className="service-demo-link"
+          onClick={() => onOpenDemo()}
         >
-          <ExternalLink size={15} />
-          {service.demoLabel}
-        </a>
+          <PlayCircle size={16} />
+          Prova la demo interattiva
+        </button>
       )}
       {service.addons && (
         <div className="voip-addons" style={{ borderTopColor: 'var(--border)' }}>
@@ -125,6 +125,7 @@ function ServiceCard({ service, delay }: { service: (typeof services)[0]; delay:
 export default function Services() {
   const headerRef = useScrollReveal();
   const cctvRef = useScrollReveal();
+  const [demoOpen, setDemoOpen] = useState(false);
 
   return (
     <section id="servizi" className="services-section">
@@ -140,7 +141,7 @@ export default function Services() {
 
         <div className="services-grid">
           {services.map((service, i) => (
-            <ServiceCard key={service.id} service={service} delay={i + 1} />
+            <ServiceCard key={service.id} service={service} delay={i + 1} onOpenDemo={() => setDemoOpen(true)} />
           ))}
 
           {/* Featured: Videosorveglianza */}
@@ -222,6 +223,10 @@ export default function Services() {
           </div>
         </div>
       </div>
+      {demoOpen && (
+        <Suspense fallback={null}>
+          <WifiDemo onClose={() => setDemoOpen(false)} />
+        </Suspense>
+      )}
     </section>
-  );
-}
+  );}

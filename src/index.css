@@ -880,12 +880,14 @@ body {
   gap: 6px;
   margin-top: 16px;
   padding: 10px 16px;
+  border: none;
   border-radius: var(--radius-sm);
   background: rgba(23, 82, 199, 0.08);
   color: var(--primary);
+  font-family: inherit;
   font-size: 13.5px;
   font-weight: 600;
-  text-decoration: none;
+  cursor: pointer;
   transition: all var(--transition);
   align-self: flex-start;
 }
@@ -893,6 +895,309 @@ body {
   background: var(--primary);
   color: #fff;
   transform: translateY(-1px);
+}
+
+/* ─── WiFi Demo Modal ─── */
+.wifi-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: wifi-fade 0.2s ease;
+}
+@keyframes wifi-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.wifi-modal {
+  position: relative;
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: wifi-slide-up 0.25s ease;
+}
+@keyframes wifi-slide-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.wifi-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  z-index: 2;
+}
+.wifi-modal-close:hover {
+  background: var(--error);
+  color: #fff;
+}
+
+.wifi-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 28px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.wifi-modal-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-sm);
+  background: rgba(23, 82, 199, 0.1);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wifi-modal-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--dark);
+  margin: 0;
+}
+.wifi-modal-sub {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
+.wifi-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 16px 28px 0;
+}
+.wifi-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--bg-alt);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.wifi-tabs button.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.wifi-sim {
+  padding: 24px 28px 28px;
+}
+
+.wifi-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.wifi-stat {
+  flex: 1;
+  text-align: center;
+  padding: 14px 8px;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+}
+.wifi-stat-value {
+  display: block;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--primary);
+}
+.wifi-stat-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.wifi-floor-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wifi-floor {
+  position: relative;
+  background: #fafbfc;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  overflow: hidden;
+  max-width: 100%;
+}
+.wifi-floor-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+.wifi-room-label {
+  font-size: 11px;
+  fill: rgba(0, 0, 0, 0.3);
+  font-weight: 600;
+}
+.wifi-floor-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.wifi-ap-marker {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(23, 82, 199, 0.4);
+  transition: transform 0.15s ease;
+}
+.wifi-ap-marker:hover {
+  transform: scale(1.15);
+  background: var(--error);
+}
+
+.wifi-client {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wifi-ap-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.wifi-ap-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-alt);
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.wifi-ap-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.wifi-ap-remove {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.wifi-ap-remove:hover { color: var(--error); }
+
+/* Topology tab */
+.wifi-topo {
+  padding: 24px 28px 28px;
+}
+.wifi-topo-svg {
+  width: 100%;
+  max-height: 360px;
+}
+.wifi-topo-label {
+  font-size: 13px;
+  fill: var(--primary);
+  font-weight: 700;
+}
+.wifi-topo-name {
+  font-size: 12px;
+  fill: var(--dark);
+  font-weight: 700;
+}
+.wifi-topo-sub {
+  font-size: 10px;
+  fill: var(--text-secondary);
+}
+.wifi-topo-ap {
+  font-size: 11px;
+  fill: var(--success);
+  font-weight: 700;
+}
+.wifi-topo-client {
+  font-size: 10px;
+  fill: var(--text-secondary);
+  font-weight: 600;
+}
+.wifi-topo-legend {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wifi-topo-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.wifi-topo-legend-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.wifi-topo-legend-dot.primary { background: var(--primary); }
+.wifi-topo-legend-dot.blue { background: rgba(23, 82, 199, 0.4); }
+.wifi-topo-legend-dot.green { background: var(--success); }
+.wifi-topo-legend-dot.gray { background: rgba(100, 116, 139, 0.3); }
+
+@media (max-width: 640px) {
+  .wifi-modal { max-height: 95vh; }
+  .wifi-modal-header { padding: 20px 20px 16px; }
+  .wifi-sim, .wifi-topo { padding: 16px 20px 20px; }
+  .wifi-stats { flex-wrap: wrap; }
+  .wifi-stat { min-width: calc(50% - 6px); }
+  .wifi-floor { width: 100% !important; height: auto !important; aspect-ratio: 3 / 2; }
 }
 
 .service-cctv-grid {
